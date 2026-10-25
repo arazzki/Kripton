@@ -1,0 +1,382 @@
+export component AppWindow inherits Window {
+    title: "Kripton";
+    background: transparent;
+    no-frame: true;
+    always-on-top: true;
+    width: 640px;
+    height: 220px;
+
+    // State properties
+    in-out property <bool> is_expanded: false;
+    in-out property <bool> is_hovered: island_touch.has-hover;
+    in-out property <bool> has_media: false;
+    in-out property <bool> is_playing: false;
+    in-out property <string> track_title: "No Media Playing";
+    in-out property <string> track_artist: "";
+    in-out property <string> source_title: "";
+    in-out property <image> album_art;
+    in-out property <bool> has_album_art: false;
+    in-out property <float> progress_ratio: 0.0;
+    in-out property <string> position_text: "0:00";
+    in-out property <string> duration_text: "0:00";
+    in-out property <string> clock_text: "12:00";
+
+    // Equalizer visualizer heights
+    in-out property <length> bar1_height: 6px;
+    in-out property <length> bar2_height: 12px;
+    in-out property <length> bar3_height: 9px;
+    in-out property <length> bar4_height: 15px;
+
+    // Callbacks to Rust backend
+    callback toggle_play_pause();
+    callback next_track();
+    callback prev_track();
+    callback toggle_expand();
+
+    // Mode calculation
+    property <bool> is_active: root.is_expanded || root.is_hovered || (root.has_media && root.is_playing);
+
+    // Dynamic Island Capsule
+    island := Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: 0px;
+        width: root.is_expanded ? 460px : (root.is_active ? 340px : 180px);
+        height: root.is_expanded ? 148px : (root.is_active ? 38px : 8px);
+        border-radius: root.is_expanded ? 28px : (root.is_active ? 19px : 4px);
+        background: #000000;
+        border-width: 1px;
+        border-color: #262626;
+        clip: true;
+
+        animate width { duration: 300ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+        animate height { duration: 300ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+        animate border-radius { duration: 300ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+
+        island_touch := TouchArea {
+            pointer-event(event) => {
+                if (event.kind == PointerEventKind.up && !root.is_expanded) {
+                    root.is_expanded = true;
+                }
+            }
+            mouse-cursor: pointer;
+        }
+
+        // ==========================================
+        // 1. COMPACT VIEW (Hovered or Music Playing)
+        // ==========================================
+        if !root.is_expanded && root.is_active : HorizontalLayout {
+            padding-left: 12px;
+            padding-right: 14px;
+            alignment: space-between;
+
+            // Left: Album Art Dot
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: start;
+
+                Rectangle {
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: #1DB954;
+                    clip: true;
+                    y: (parent.height - self.height) / 2;
+
+                    if root.has_album_art : Image {
+                        source: root.album_art;
+                        width: 100%;
+                        height: 100%;
+                        image-fit: cover;
+                    }
+                    if !root.has_album_art : Text {
+                        text: "🎵";
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+
+                // Title snippet
+                Text {
+                    text: root.track_title;
+                    color: #FFFFFF;
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    overflow: elide;
+                    max-width: 170px;
+                }
+            }
+
+            // Right: Equalizer (if playing) + Clock
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+
+                // Procedural Equalizer
+                if root.is_playing : HorizontalLayout {
+                    spacing: 2.5px;
+                    alignment: center;
+                    y: (parent.height - 18px) / 2;
+                    height: 18px;
+
+                    Rectangle {
+                        width: 3px;
+                        height: root.bar1_height;
+                        border-radius: 1.5px;
+                        background: #1DB954;
+                        y: (parent.height - self.height) / 2;
+                        animate height { duration: 110ms; }
+                    }
+                    Rectangle {
+                        width: 3px;
+                        height: root.bar2_height;
+                        border-radius: 1.5px;
+                        background: #1DB954;
+                        y: (parent.height - self.height) / 2;
+                        animate height { duration: 110ms; }
+                    }
+                    Rectangle {
+                        width: 3px;
+                        height: root.bar3_height;
+                        border-radius: 1.5px;
+                        background: #1DB954;
+                        y: (parent.height - self.height) / 2;
+                        animate height { duration: 110ms; }
+                    }
+                    Rectangle {
+                        width: 3px;
+                        height: root.bar4_height;
+                        border-radius: 1.5px;
+                        background: #1DB954;
+                        y: (parent.height - self.height) / 2;
+                        animate height { duration: 110ms; }
+                    }
+                }
+
+                // Clock
+                Text {
+                    text: root.clock_text;
+                    color: #A3A3A3;
+                    font-size: 12px;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // ==========================================
+        // 2. EXPANDED HUD VIEW (Full Media Center)
+        // ==========================================
+        if root.is_expanded : VerticalLayout {
+            padding-left: 16px;
+            padding-right: 16px;
+            padding-top: 14px;
+            padding-bottom: 12px;
+            spacing: 10px;
+
+            // Row 1: Header (Cover + Titles + Collapse button)
+            HorizontalLayout {
+                spacing: 12px;
+                alignment: space-between;
+
+                // Left: Album Art & Track Info
+                HorizontalLayout {
+                    spacing: 12px;
+
+                    // Large Album Art
+                    Rectangle {
+                        width: 52px;
+                        height: 52px;
+                        border-radius: 12px;
+                        background: #18181B;
+                        border-width: 1px;
+                        border-color: #27272A;
+                        clip: true;
+
+                        if root.has_album_art : Image {
+                            source: root.album_art;
+                            width: 100%;
+                            height: 100%;
+                            image-fit: cover;
+                        }
+                        if !root.has_album_art : Text {
+                            text: "💿";
+                            font-size: 24px;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Title + Artist + App Source
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 2px;
+
+                        Text {
+                            text: root.track_title;
+                            color: #FFFFFF;
+                            font-size: 14px;
+                            font-weight: 700;
+                            overflow: elide;
+                            max-width: 280px;
+                        }
+
+                        Text {
+                            text: root.track_artist != "" ? root.track_artist : (root.has_media ? "Unknown Artist" : "No active playback");
+                            color: #A1A1AA;
+                            font-size: 12px;
+                            overflow: elide;
+                            max-width: 280px;
+                        }
+
+                        if root.source_title != "" : Text {
+                            text: root.source_title;
+                            color: #1DB954;
+                            font-size: 10px;
+                            font-weight: 600;
+                            overflow: elide;
+                        }
+                    }
+                }
+
+                // Right: Close/Collapse chevron
+                collapse_btn := Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: collapse_touch.has-hover ? #27272A : transparent;
+                    y: 0px;
+
+                    Text {
+                        text: "✕";
+                        color: collapse_touch.has-hover ? #FFFFFF : #71717A;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    collapse_touch := TouchArea {
+                        clicked => {
+                            root.is_expanded = false;
+                        }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+
+            // Row 2: Timeline Progress Bar
+            VerticalLayout {
+                spacing: 3px;
+
+                // Progress Track
+                Rectangle {
+                    height: 4px;
+                    border-radius: 2px;
+                    background: #27272A;
+
+                    // Progress Fill
+                    Rectangle {
+                        x: 0px;
+                        y: 0px;
+                        height: 4px;
+                        border-radius: 2px;
+                        width: parent.width * max(0.0, min(1.0, root.progress_ratio));
+                        background: #1DB954;
+                    }
+                }
+
+                // Time labels
+                HorizontalLayout {
+                    alignment: space-between;
+
+                    Text {
+                        text: root.position_text;
+                        color: #71717A;
+                        font-size: 10px;
+                    }
+                    Text {
+                        text: root.duration_text;
+                        color: #71717A;
+                        font-size: 10px;
+                    }
+                }
+            }
+
+            // Row 3: Media Control Buttons
+            HorizontalLayout {
+                alignment: center;
+                spacing: 32px;
+
+                // Previous Track Button
+                prev_btn := Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 18px;
+                    background: prev_touch.has-hover ? #27272A : transparent;
+
+                    Text {
+                        text: "⏮";
+                        font-size: 16px;
+                        color: prev_touch.has-hover ? #FFFFFF : #D4D4D8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    prev_touch := TouchArea {
+                        clicked => {
+                            root.prev_track();
+                        }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // Play / Pause Primary Button
+                play_btn := Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: play_touch.has-hover ? #FFFFFF : #E4E4E7;
+
+                    Text {
+                        text: root.is_playing ? "⏸" : "▶";
+                        font-size: 17px;
+                        color: #09090B;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    play_touch := TouchArea {
+                        clicked => {
+                            root.toggle_play_pause();
+                        }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // Next Track Button
+                next_btn := Rectangle {
+                    width: 36px;
+                    height: 36px;
+                    border-radius: 18px;
+                    background: next_touch.has-hover ? #27272A : transparent;
+
+                    Text {
+                        text: "⏭";
+                        font-size: 16px;
+                        color: next_touch.has-hover ? #FFFFFF : #D4D4D8;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    next_touch := TouchArea {
+                        clicked => {
+                            root.next_track();
+                        }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+        }
+    }
+}
