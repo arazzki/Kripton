@@ -1,6 +1,9 @@
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
 mod media;
 mod shelf;
 mod system;
+mod tray;
 
 slint::include_modules!();
 
@@ -54,7 +57,10 @@ fn main() -> Result<(), slint::PlatformError> {
     // 5. Start Screenshot & Quick Shelf Manager (Sprint 4)
     let shelf_handle = shelf::ShelfManager::start(app.as_weak());
 
-    // 6. Hook UI Media Action Callbacks
+    // 6. Start Windows Taskbar System Tray Icon (Sprint 5)
+    tray::SystemTray::start(app.as_weak());
+
+    // 7. Hook UI Media Action Callbacks
     let handle_play = media_handle.clone();
     app.on_toggle_play_pause(move || {
         handle_play.send(media::MediaCommand::TogglePlayPause);
@@ -70,7 +76,7 @@ fn main() -> Result<(), slint::PlatformError> {
         handle_prev.send(media::MediaCommand::Previous);
     });
 
-    // 7. Hook UI Shelf Callbacks
+    // 8. Hook UI Shelf Callbacks
     let shelf_open_h = shelf_handle.clone();
     app.on_shelf_open(move || {
         shelf_open_h.send(shelf::ShelfAction::OpenLatest);
@@ -86,7 +92,7 @@ fn main() -> Result<(), slint::PlatformError> {
         shelf_dismiss_h.send(shelf::ShelfAction::Dismiss);
     });
 
-    // 8. Procedural Sine-Wave Equalizer Timer (runs only when playing)
+    // 9. Procedural Sine-Wave Equalizer Timer (runs only when playing)
     let weak_eq = app.as_weak();
     let mut tick: f32 = 0.0;
     let eq_timer = slint::Timer::default();
@@ -115,7 +121,7 @@ fn main() -> Result<(), slint::PlatformError> {
         },
     );
 
-    // 9. Clock Update Timer (1 second interval)
+    // 10. Clock Update Timer (1 second interval)
     let weak_clock = app.as_weak();
     let clock_timer = slint::Timer::default();
     clock_timer.start(
@@ -128,6 +134,6 @@ fn main() -> Result<(), slint::PlatformError> {
         },
     );
 
-    println!("[Kripton] Starting Dynamic Island Main Event Loop with Sprint 4 Shelf Subsystem...");
+    println!("[Kripton] Native Dynamic Island Running on Windows.");
     app.run()
 }
