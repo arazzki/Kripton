@@ -62,7 +62,7 @@ export component AppWindow inherits Window {
     no-frame: true;
     always-on-top: true;
     width: 640px;
-    height: 220px;
+    height: 240px;
 
     // State properties
     in-out property <bool> is_expanded: false;
@@ -88,6 +88,14 @@ export component AppWindow inherits Window {
     in-out property <bool> hud_show_bar: true;
     in-out property <color> hud_bar_color: #1DB954;
 
+    // Screenshot & Shelf properties (Fase 4: Clipboard & Quick Shelf)
+    in-out property <bool> is_shelf_active: false;
+    in-out property <bool> has_shelf_item: false;
+    in-out property <image> shelf_thumb;
+    in-out property <string> shelf_filename: "";
+    in-out property <string> shelf_res_text: "";
+    in-out property <string> shelf_path: "";
+
     // Equalizer visualizer heights
     in-out property <length> bar1_height: 6px;
     in-out property <length> bar2_height: 12px;
@@ -100,28 +108,34 @@ export component AppWindow inherits Window {
     callback prev_track();
     callback toggle_expand();
 
+    // Shelf Callbacks
+    callback shelf_open();
+    callback shelf_copy_path();
+    callback shelf_dismiss();
+
     // Mode calculation
-    property <bool> is_active: root.is_expanded || root.is_hovered || root.is_hud_active || (root.has_media && root.is_playing);
+    property <bool> is_active: root.is_expanded || root.is_hovered || root.is_hud_active || root.is_shelf_active || (root.has_media && root.is_playing);
 
     // Dynamic Island Capsule
     island := Rectangle {
         x: (parent.width - self.width) / 2;
         y: 0px;
-        width: root.is_expanded ? 460px : (root.is_active ? 340px : 180px);
-        height: root.is_expanded ? 148px : (root.is_active ? 38px : 8px);
-        border-radius: root.is_expanded ? 28px : (root.is_active ? 19px : 4px);
+        width: root.is_expanded ? 460px : (root.is_shelf_active && !root.is_hud_active ? 360px : (root.is_active ? 340px : 180px));
+        height: root.is_expanded ? 156px : (root.is_shelf_active && !root.is_hud_active ? 42px : (root.is_active ? 38px : 8px));
+        border-radius: root.is_expanded ? 28px : (root.is_shelf_active && !root.is_hud_active ? 21px : (root.is_active ? 19px : 4px));
         background: #000000;
         border-width: 1px;
-        border-color: #262626;
+        border-color: (root.is_shelf_active && !root.is_hud_active) ? #38BDF8 : #262626;
         clip: true;
 
         animate width { duration: 300ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
         animate height { duration: 300ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
         animate border-radius { duration: 300ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
+        animate border-color { duration: 250ms; }
 
         island_touch := TouchArea {
             pointer-event(event) => {
-                if (event.kind == PointerEventKind.up && !root.is_expanded && !root.is_hud_active) {
+                if (event.kind == PointerEventKind.up && !root.is_expanded && !root.is_hud_active && !root.is_shelf_active) {
                     root.is_expanded = true;
                 }
             }
@@ -190,9 +204,133 @@ export component AppWindow inherits Window {
         }
 
         // =========================================================
-        // 2. COMPACT VIEW (Hovered or Music Playing or Idle Woken)
+        // 2. QUICK SCREENSHOT SHELF OVERLAY (Fase 4: Win+Shift+S)
         // =========================================================
-        if !root.is_hud_active && !root.is_expanded && root.is_active : HorizontalLayout {
+        if !root.is_hud_active && root.is_shelf_active && !root.is_expanded : HorizontalLayout {
+            padding-left: 10px;
+            padding-right: 12px;
+            alignment: space-between;
+
+            // Left: Thumbnail + Info
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: start;
+
+                // Thumbnail preview
+                Rectangle {
+                    width: 28px;
+                    height: 28px;
+                    border-radius: 6px;
+                    background: #18181B;
+                    border-width: 1px;
+                    border-color: #27272A;
+                    clip: true;
+                    y: (parent.height - self.height) / 2;
+
+                    Image {
+                        source: root.shelf_thumb;
+                        width: 100%;
+                        height: 100%;
+                        image-fit: cover;
+                    }
+                }
+
+                // Title + Resolution badge
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 1px;
+
+                    Text {
+                        text: "Screenshot Captured";
+                        color: #FFFFFF;
+                        font-size: 11px;
+                        font-weight: 700;
+                    }
+
+                    Text {
+                        text: root.shelf_res_text;
+                        color: #38BDF8;
+                        font-size: 10px;
+                        font-weight: 600;
+                    }
+                }
+            }
+
+            // Right: Action buttons (Open, Copy Path, Dismiss)
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+
+                // Open in Explorer/Viewer button
+                Rectangle {
+                    width: 26px;
+                    height: 26px;
+                    border-radius: 13px;
+                    background: open_touch.has-hover ? #27272A : #18181B;
+                    y: (parent.height - self.height) / 2;
+
+                    Text {
+                        text: "👁";
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    open_touch := TouchArea {
+                        clicked => { root.shelf_open(); }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // Copy Path button
+                Rectangle {
+                    width: 26px;
+                    height: 26px;
+                    border-radius: 13px;
+                    background: copy_touch.has-hover ? #27272A : #18181B;
+                    y: (parent.height - self.height) / 2;
+
+                    Text {
+                        text: "📋";
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    copy_touch := TouchArea {
+                        clicked => { root.shelf_copy_path(); }
+                        mouse-cursor: pointer;
+                    }
+                }
+
+                // Dismiss button
+                Rectangle {
+                    width: 22px;
+                    height: 22px;
+                    border-radius: 11px;
+                    background: dismiss_touch.has-hover ? #27272A : transparent;
+                    y: (parent.height - self.height) / 2;
+
+                    Text {
+                        text: "✕";
+                        color: #71717A;
+                        font-size: 11px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    dismiss_touch := TouchArea {
+                        clicked => { root.shelf_dismiss(); }
+                        mouse-cursor: pointer;
+                    }
+                }
+            }
+        }
+
+        // =========================================================
+        // 3. COMPACT VIEW (Hovered or Music Playing or Idle Woken)
+        // =========================================================
+        if !root.is_hud_active && !root.is_shelf_active && !root.is_expanded && root.is_active : HorizontalLayout {
             padding-left: 12px;
             padding-right: 14px;
             alignment: space-between;
@@ -347,7 +485,7 @@ export component AppWindow inherits Window {
         }
 
         // ==========================================
-        // 3. EXPANDED HUD VIEW (Full Media Center)
+        // 4. EXPANDED HUD VIEW (Full Media Center)
         // ==========================================
         if root.is_expanded : VerticalLayout {
             padding-left: 16px;
@@ -481,78 +619,125 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // Row 3: Media Control Buttons
+            // Row 3: Media Control Buttons & Shelf Action Shortcut
             HorizontalLayout {
-                alignment: center;
-                spacing: 32px;
+                alignment: space-between;
 
-                // Previous Track Button
-                prev_btn := Rectangle {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: 18px;
-                    background: prev_touch.has-hover ? #27272A : transparent;
+                // Left: Shelf quick link if screenshot captured
+                if root.has_shelf_item : Rectangle {
+                    width: 80px;
+                    height: 28px;
+                    border-radius: 14px;
+                    background: shelf_btn_touch.has-hover ? #27272A : #18181B;
+                    y: (parent.height - self.height) / 2;
 
-                    Text {
-                        text: "⏮";
-                        font-size: 16px;
-                        color: prev_touch.has-hover ? #FFFFFF : #D4D4D8;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                    HorizontalLayout {
+                        spacing: 4px;
+                        alignment: center;
+                        Text {
+                            text: "📸";
+                            font-size: 11px;
+                            vertical-alignment: center;
+                        }
+                        Text {
+                            text: "Shelf";
+                            color: #38BDF8;
+                            font-size: 11px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
                     }
 
-                    prev_touch := TouchArea {
+                    shelf_btn_touch := TouchArea {
                         clicked => {
-                            root.prev_track();
+                            root.shelf_open();
                         }
                         mouse-cursor: pointer;
                     }
                 }
 
-                // Play / Pause Primary Button
-                play_btn := Rectangle {
-                    width: 40px;
-                    height: 40px;
-                    border-radius: 20px;
-                    background: play_touch.has-hover ? #FFFFFF : #E4E4E7;
+                if !root.has_shelf_item : Rectangle {
+                    width: 80px;
+                }
 
-                    Text {
-                        text: root.is_playing ? "⏸" : "▶";
-                        font-size: 17px;
-                        color: #09090B;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                // Center: Playback Buttons
+                HorizontalLayout {
+                    alignment: center;
+                    spacing: 24px;
+
+                    // Previous Track Button
+                    prev_btn := Rectangle {
+                        width: 36px;
+                        height: 36px;
+                        border-radius: 18px;
+                        background: prev_touch.has-hover ? #27272A : transparent;
+
+                        Text {
+                            text: "⏮";
+                            font-size: 16px;
+                            color: prev_touch.has-hover ? #FFFFFF : #D4D4D8;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        prev_touch := TouchArea {
+                            clicked => {
+                                root.prev_track();
+                            }
+                            mouse-cursor: pointer;
+                        }
                     }
 
-                    play_touch := TouchArea {
-                        clicked => {
-                            root.toggle_play_pause();
+                    // Play / Pause Primary Button
+                    play_btn := Rectangle {
+                        width: 40px;
+                        height: 40px;
+                        border-radius: 20px;
+                        background: play_touch.has-hover ? #FFFFFF : #E4E4E7;
+
+                        Text {
+                            text: root.is_playing ? "⏸" : "▶";
+                            font-size: 17px;
+                            color: #09090B;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
                         }
-                        mouse-cursor: pointer;
+
+                        play_touch := TouchArea {
+                            clicked => {
+                                root.toggle_play_pause();
+                            }
+                            mouse-cursor: pointer;
+                        }
+                    }
+
+                    // Next Track Button
+                    next_btn := Rectangle {
+                        width: 36px;
+                        height: 36px;
+                        border-radius: 18px;
+                        background: next_touch.has-hover ? #27272A : transparent;
+
+                        Text {
+                            text: "⏭";
+                            font-size: 16px;
+                            color: next_touch.has-hover ? #FFFFFF : #D4D4D8;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+
+                        next_touch := TouchArea {
+                            clicked => {
+                                root.next_track();
+                            }
+                            mouse-cursor: pointer;
+                        }
                     }
                 }
 
-                // Next Track Button
-                next_btn := Rectangle {
-                    width: 36px;
-                    height: 36px;
-                    border-radius: 18px;
-                    background: next_touch.has-hover ? #27272A : transparent;
-
-                    Text {
-                        text: "⏭";
-                        font-size: 16px;
-                        color: next_touch.has-hover ? #FFFFFF : #D4D4D8;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-
-                    next_touch := TouchArea {
-                        clicked => {
-                            root.next_track();
-                        }
-                        mouse-cursor: pointer;
-                    }
+                // Right spacer to keep center aligned
+                Rectangle {
+                    width: 80px;
                 }
             }
         }

@@ -1,4 +1,5 @@
 mod media;
+mod shelf;
 mod system;
 
 slint::include_modules!();
@@ -44,13 +45,16 @@ fn main() -> Result<(), slint::PlatformError> {
     // 2. Set initial clock time
     app.set_clock_text(get_local_time_string().into());
 
-    // 3. Start WinRT SMTC Universal Media Controller
+    // 3. Start WinRT SMTC Universal Media Controller (Sprint 2)
     let media_handle = media::MediaController::start(app.as_weak());
 
-    // 4. Start Windows System HUD Sensor (WASAPI Volume & Battery)
+    // 4. Start Windows System HUD Sensor: WASAPI Volume & Battery (Sprint 3)
     system::SystemHudManager::start(app.as_weak());
 
-    // 5. Hook UI media action callbacks
+    // 5. Start Screenshot & Quick Shelf Manager (Sprint 4)
+    let shelf_handle = shelf::ShelfManager::start(app.as_weak());
+
+    // 6. Hook UI Media Action Callbacks
     let handle_play = media_handle.clone();
     app.on_toggle_play_pause(move || {
         handle_play.send(media::MediaCommand::TogglePlayPause);
@@ -66,7 +70,23 @@ fn main() -> Result<(), slint::PlatformError> {
         handle_prev.send(media::MediaCommand::Previous);
     });
 
-    // 5. Procedural Sine-Wave Equalizer Timer (runs only when playing)
+    // 7. Hook UI Shelf Callbacks
+    let shelf_open_h = shelf_handle.clone();
+    app.on_shelf_open(move || {
+        shelf_open_h.send(shelf::ShelfAction::OpenLatest);
+    });
+
+    let shelf_copy_h = shelf_handle.clone();
+    app.on_shelf_copy_path(move || {
+        shelf_copy_h.send(shelf::ShelfAction::CopyPathLatest);
+    });
+
+    let shelf_dismiss_h = shelf_handle;
+    app.on_shelf_dismiss(move || {
+        shelf_dismiss_h.send(shelf::ShelfAction::Dismiss);
+    });
+
+    // 8. Procedural Sine-Wave Equalizer Timer (runs only when playing)
     let weak_eq = app.as_weak();
     let mut tick: f32 = 0.0;
     let eq_timer = slint::Timer::default();
@@ -95,7 +115,7 @@ fn main() -> Result<(), slint::PlatformError> {
         },
     );
 
-    // 6. Clock Update Timer (1 second interval)
+    // 9. Clock Update Timer (1 second interval)
     let weak_clock = app.as_weak();
     let clock_timer = slint::Timer::default();
     clock_timer.start(
@@ -108,6 +128,6 @@ fn main() -> Result<(), slint::PlatformError> {
         },
     );
 
-    println!("[Kripton] Starting Dynamic Island Main Event Loop...");
+    println!("[Kripton] Starting Dynamic Island Main Event Loop with Sprint 4 Shelf Subsystem...");
     app.run()
 }

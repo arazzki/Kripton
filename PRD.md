@@ -1,7 +1,7 @@
 # 🦀 Product Requirements Document (PRD)
 # Project: "Kripton" (Native Windows Dynamic Island in Rust)
 **Repository Path:** `E:\Project\Kripton`  
-**Current Status:** Fase 3 (Selesai — System HUD Sensor WASAPI Volume & Battery Berhasil Terintegrasi & Teruji)
+**Current Status:** Fase 4 (Selesai — Screenshot & File Shelf Berhasil Terintegrasi & Teruji)
 
 ---
 
@@ -119,5 +119,5 @@ E:\Project\Kripton/
 | **Fase 1** | **Scaffolding & UI Prototype** | **SELESAI ✅** | Inisialisasi Cargo, integrasi Slint 1.18, animasi morphing 3-state, dan kompilasi biner `kripton.exe` (Exit Code 0). |
 | **Fase 2** | **WinRT Media Controller (SMTC)** | **SELESAI ✅** | Integrasi `windows::Media::Control` (SMTC), kontrol Play/Pause/Next/Prev, dekode album art native, procedural 4-bar equalizer, timeline progress bar, dan background event-driven worker. |
 | **Fase 3** | **System HUD Sensor** | **SELESAI ✅** | Integrasi listener Windows Core Audio (WASAPI `IAudioEndpointVolumeCallback`), sensor status daya/baterai (`GetSystemPowerStatus`), pop-up pill overlay dinamis, auto-dismiss timer, dan prioritisasi HUD. |
-| **Fase 4** | **Screenshot & File Shelf** | *Next Up 🎯* | Listener clipboard untuk tangkapan layar otomatis (`Win + Shift + S`) dan OLE Drag-and-drop shelf. |
-| **Fase 5** | **Optimasi Rilis & Packaging** | *Pending* | Profiling memori (<35 MB), kompilasi rilis (`lto = true`, `opt-level = "z"`), dan icon tray. |
+| **Fase 4** | **Screenshot & File Shelf** | **SELESAI ✅** | Deteksi otomatis tangkapan layar clipboard (`Win + Shift + S` / PrtScn) via sequence number C-ABI, penyimpanan PNG lokal, pratinjau thumbnail real-time di Dynamic Island, aksi buka & salin path, dan integrasi Quick Shelf. |
+| **Fase 5** | **Optimasi Rilis & Packaging** | *Next Up 🎯* | Profiling memori (<35 MB), kompilasi rilis (`lto = true`, `opt-level = "z"`), dan icon tray. |
