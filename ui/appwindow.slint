@@ -1,3 +1,61 @@
+// Elegant Geometric Monogram Silhouette "K" (Kripton)
+component GeometricK inherits Rectangle {
+    in-out property <length> size: 24px;
+    in-out property <color> spine_color: #FFFFFF;
+    in-out property <color> blade_top_color: #00F2FE;
+    in-out property <color> blade_bottom_color: #00C6FF;
+    in-out property <color> badge_bg: #0C0C0E;
+    in-out property <color> badge_border: #27272A;
+
+    width: root.size;
+    height: root.size;
+    border-radius: root.size / 2;
+    background: root.badge_bg;
+    border-width: 1px;
+    border-color: root.badge_border;
+    clip: true;
+
+    // Left Vertical Spine (Monolith Pillar)
+    Rectangle {
+        x: 5.5px;
+        y: 4px;
+        width: 2.8px;
+        height: 16px;
+        border-radius: 1.4px;
+        background: root.spine_color;
+    }
+
+    // Upper Diagonal Blade (Faceted shard pointing up-right)
+    Path {
+        x: 0px;
+        y: 0px;
+        width: root.size;
+        height: root.size;
+        commands: "M 9.5 11 L 16.5 4 L 19 4 L 12 11 Z";
+        fill: root.blade_top_color;
+    }
+
+    // Lower Diagonal Blade (Faceted shard pointing down-right)
+    Path {
+        x: 0px;
+        y: 0px;
+        width: root.size;
+        height: root.size;
+        commands: "M 9.5 13 L 12 13 L 19 20 L 16.5 20 Z";
+        fill: root.blade_bottom_color;
+    }
+
+    // Center Energy Core Vertex
+    Rectangle {
+        x: 9.8px;
+        y: 11.2px;
+        width: 1.6px;
+        height: 1.6px;
+        border-radius: 0.8px;
+        background: #FFFFFF;
+    }
+}
+
 export component AppWindow inherits Window {
     title: "Kripton";
     background: transparent;
@@ -131,20 +189,21 @@ export component AppWindow inherits Window {
             }
         }
 
-        // ==========================================
-        // 2. COMPACT VIEW (Hovered or Music Playing)
-        // ==========================================
+        // =========================================================
+        // 2. COMPACT VIEW (Hovered or Music Playing or Idle Woken)
+        // =========================================================
         if !root.is_hud_active && !root.is_expanded && root.is_active : HorizontalLayout {
             padding-left: 12px;
             padding-right: 14px;
             alignment: space-between;
 
-            // Left: Album Art Dot
+            // Left: Album Art Dot OR Geometric "K" Silhouette (Idle)
             HorizontalLayout {
-                spacing: 8px;
+                spacing: 9px;
                 alignment: start;
 
-                Rectangle {
+                // When Media with Album Art is Active
+                if root.has_media && root.has_album_art : Rectangle {
                     width: 24px;
                     height: 24px;
                     border-radius: 12px;
@@ -152,13 +211,23 @@ export component AppWindow inherits Window {
                     clip: true;
                     y: (parent.height - self.height) / 2;
 
-                    if root.has_album_art : Image {
+                    Image {
                         source: root.album_art;
                         width: 100%;
                         height: 100%;
                         image-fit: cover;
                     }
-                    if !root.has_album_art : Text {
+                }
+
+                // When Media without Art is Active
+                if root.has_media && !root.has_album_art : Rectangle {
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 12px;
+                    background: #1DB954;
+                    y: (parent.height - self.height) / 2;
+
+                    Text {
                         text: "🎵";
                         font-size: 11px;
                         horizontal-alignment: center;
@@ -166,15 +235,57 @@ export component AppWindow inherits Window {
                     }
                 }
 
+                // IDLE MODE: Elegant Geometric Silhouette "K" Monogram
+                if !root.has_media : GeometricK {
+                    size: 24px;
+                    y: (parent.height - self.height) / 2;
+                }
+
                 // Title snippet
-                Text {
-                    text: root.track_title;
-                    color: #FFFFFF;
-                    font-size: 12px;
-                    font-weight: 600;
-                    vertical-alignment: center;
-                    overflow: elide;
-                    max-width: 170px;
+                VerticalLayout {
+                    alignment: center;
+
+                    // When Media is playing
+                    if root.has_media : Text {
+                        text: root.track_title;
+                        color: #FFFFFF;
+                        font-size: 12px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        overflow: elide;
+                        max-width: 170px;
+                    }
+
+                    // When Idle: Clean Kripton Branding & Status
+                    if !root.has_media : HorizontalLayout {
+                        spacing: 6px;
+                        alignment: start;
+
+                        Text {
+                            text: "KRIPTON";
+                            color: #FFFFFF;
+                            font-size: 11px;
+                            font-weight: 800;
+                            vertical-alignment: center;
+                        }
+
+                        // Subtle ready pulse dot
+                        Rectangle {
+                            width: 5px;
+                            height: 5px;
+                            border-radius: 2.5px;
+                            background: #10B981;
+                            y: (parent.height - self.height) / 2;
+                        }
+
+                        Text {
+                            text: "READY";
+                            color: #71717A;
+                            font-size: 10px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
                 }
             }
 
@@ -183,8 +294,8 @@ export component AppWindow inherits Window {
                 spacing: 8px;
                 alignment: end;
 
-                // Procedural Equalizer
-                if root.is_playing : HorizontalLayout {
+                // Procedural Equalizer (only when media is playing)
+                if root.has_media && root.is_playing : HorizontalLayout {
                     spacing: 2.5px;
                     alignment: center;
                     y: (parent.height - 18px) / 2;
@@ -254,7 +365,7 @@ export component AppWindow inherits Window {
                 HorizontalLayout {
                     spacing: 12px;
 
-                    // Large Album Art
+                    // Large Album Art or Large Geometric K
                     Rectangle {
                         width: 52px;
                         height: 52px;
@@ -270,11 +381,8 @@ export component AppWindow inherits Window {
                             height: 100%;
                             image-fit: cover;
                         }
-                        if !root.has_album_art : Text {
-                            text: "💿";
-                            font-size: 24px;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
+                        if !root.has_album_art : GeometricK {
+                            size: 24px;
                         }
                     }
 
@@ -293,7 +401,7 @@ export component AppWindow inherits Window {
                         }
 
                         Text {
-                            text: root.track_artist != "" ? root.track_artist : (root.has_media ? "Unknown Artist" : "No active playback");
+                            text: root.track_artist != "" ? root.track_artist : (root.has_media ? "Unknown Artist" : "System Standby");
                             color: #A1A1AA;
                             font-size: 12px;
                             overflow: elide;
