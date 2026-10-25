@@ -13,7 +13,14 @@ windows = { version = "0.62", features = [
     "Foundation_Collections",
     "Storage_Streams",
     "Win32_UI_WindowsAndMessaging",
+    "Win32_Media_Audio",
+    "Win32_Media_Audio_Endpoints",
+    "Win32_System_Com",
+    "Win32_System_Com_StructuredStorage",
+    "Win32_System_Variant",
+    "Win32_System_Power",
 ] }
+windows-core = "0.62"
 windows-future = "0.3"
 
 [build-dependencies]

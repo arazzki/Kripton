@@ -1,4 +1,5 @@
 mod media;
+mod system;
 
 slint::include_modules!();
 
@@ -46,7 +47,10 @@ fn main() -> Result<(), slint::PlatformError> {
     // 3. Start WinRT SMTC Universal Media Controller
     let media_handle = media::MediaController::start(app.as_weak());
 
-    // 4. Hook UI media action callbacks
+    // 4. Start Windows System HUD Sensor (WASAPI Volume & Battery)
+    system::SystemHudManager::start(app.as_weak());
+
+    // 5. Hook UI media action callbacks
     let handle_play = media_handle.clone();
     app.on_toggle_play_pause(move || {
         handle_play.send(media::MediaCommand::TogglePlayPause);

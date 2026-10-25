@@ -21,6 +21,15 @@ export component AppWindow inherits Window {
     in-out property <string> duration_text: "0:00";
     in-out property <string> clock_text: "12:00";
 
+    // System HUD properties (Fase 3: WASAPI Volume & Battery)
+    in-out property <bool> is_hud_active: false;
+    in-out property <string> hud_icon: "🔊";
+    in-out property <string> hud_title: "30%";
+    in-out property <string> hud_subtitle: "Master Volume";
+    in-out property <float> hud_progress: 0.3;
+    in-out property <bool> hud_show_bar: true;
+    in-out property <color> hud_bar_color: #1DB954;
+
     // Equalizer visualizer heights
     in-out property <length> bar1_height: 6px;
     in-out property <length> bar2_height: 12px;
@@ -34,7 +43,7 @@ export component AppWindow inherits Window {
     callback toggle_expand();
 
     // Mode calculation
-    property <bool> is_active: root.is_expanded || root.is_hovered || (root.has_media && root.is_playing);
+    property <bool> is_active: root.is_expanded || root.is_hovered || root.is_hud_active || (root.has_media && root.is_playing);
 
     // Dynamic Island Capsule
     island := Rectangle {
@@ -54,7 +63,7 @@ export component AppWindow inherits Window {
 
         island_touch := TouchArea {
             pointer-event(event) => {
-                if (event.kind == PointerEventKind.up && !root.is_expanded) {
+                if (event.kind == PointerEventKind.up && !root.is_expanded && !root.is_hud_active) {
                     root.is_expanded = true;
                 }
             }
@@ -62,9 +71,70 @@ export component AppWindow inherits Window {
         }
 
         // ==========================================
-        // 1. COMPACT VIEW (Hovered or Music Playing)
+        // 1. SYSTEM HUD OVERLAY (Volume & Battery)
         // ==========================================
-        if !root.is_expanded && root.is_active : HorizontalLayout {
+        if root.is_hud_active && !root.is_expanded : HorizontalLayout {
+            padding-left: 14px;
+            padding-right: 14px;
+            alignment: space-between;
+
+            // Left: Icon + Title
+            HorizontalLayout {
+                spacing: 10px;
+                alignment: start;
+
+                Text {
+                    text: root.hud_icon;
+                    font-size: 15px;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: root.hud_title;
+                    color: #FFFFFF;
+                    font-size: 13px;
+                    font-weight: 700;
+                    vertical-alignment: center;
+                }
+            }
+
+            // Right: Level Bar or Subtitle
+            HorizontalLayout {
+                spacing: 8px;
+                alignment: end;
+
+                if root.hud_show_bar : Rectangle {
+                    width: 120px;
+                    height: 6px;
+                    border-radius: 3px;
+                    background: #27272A;
+                    y: (parent.height - self.height) / 2;
+
+                    Rectangle {
+                        x: 0px;
+                        y: 0px;
+                        height: 100%;
+                        border-radius: 3px;
+                        width: parent.width * max(0.0, min(1.0, root.hud_progress));
+                        background: root.hud_bar_color;
+                        animate width { duration: 100ms; }
+                    }
+                }
+
+                if !root.hud_show_bar : Text {
+                    text: root.hud_subtitle;
+                    color: #A1A1AA;
+                    font-size: 11px;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // ==========================================
+        // 2. COMPACT VIEW (Hovered or Music Playing)
+        // ==========================================
+        if !root.is_hud_active && !root.is_expanded && root.is_active : HorizontalLayout {
             padding-left: 12px;
             padding-right: 14px;
             alignment: space-between;
@@ -166,7 +236,7 @@ export component AppWindow inherits Window {
         }
 
         // ==========================================
-        // 2. EXPANDED HUD VIEW (Full Media Center)
+        // 3. EXPANDED HUD VIEW (Full Media Center)
         // ==========================================
         if root.is_expanded : VerticalLayout {
             padding-left: 16px;

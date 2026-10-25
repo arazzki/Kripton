@@ -2401,6 +2401,7 @@ dependencies = [
  "slint",
  "slint-build",
  "windows",
+ "windows-core",
  "windows-future",
 ]
 
