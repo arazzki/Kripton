@@ -69,7 +69,7 @@ struct Morph {
 
 impl Morph {
     fn new() -> Self {
-        let (width, height) = NotchMode::Idle.size();
+        let (width, height) = NotchMode::Stealth.size();
         Self {
             width: Spring::new(width),
             height: Spring::new(height),
@@ -236,7 +236,6 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
         NotchMode::Expanded | NotchMode::Lyrics | NotchMode::Hud
     );
     let stealth = matches!(mode, NotchMode::Stealth);
-    app.set_stealth(stealth);
 
     MORPH.with(|morph| {
         let mut morph = morph.borrow_mut();
@@ -245,6 +244,7 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
 
         if expanded {
             morph.pending_collapse = None;
+            app.set_stealth(false);
             app.set_expanded(true);
             app.set_closed(false);
         } else if app.get_expanded() && morph.width.value() > COLLAPSE_REVEAL_WIDTH {
@@ -253,6 +253,7 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
             morph.pending_collapse = Some(mode);
         } else {
             morph.pending_collapse = None;
+            app.set_stealth(stealth);
             app.set_expanded(false);
             let show_closed = matches!(mode, NotchMode::Closed)
                 || (matches!(mode, NotchMode::CompactHovered) && MEDIA_ACTIVE.with(Cell::get));
@@ -261,14 +262,9 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
     });
 }
 
-/// Mode to return to when the pointer leaves the notch: Closed while media is
-/// playing, otherwise Idle.
+/// Baseline mode when inactive: Stealth mode (184x5 px).
 pub fn collapsed_mode() -> NotchMode {
-    if MEDIA_ACTIVE.with(Cell::get) {
-        NotchMode::Closed
-    } else {
-        NotchMode::Stealth
-    }
+    NotchMode::Stealth
 }
 
 pub fn install_overlay(
@@ -426,7 +422,10 @@ fn install_runtime(
                     morph.pending_collapse = None;
                     app.set_expanded(false);
                     app.set_stealth(matches!(mode, NotchMode::Stealth));
-                    app.set_closed(matches!(mode, NotchMode::Closed));
+                    let show_closed = matches!(mode, NotchMode::Closed)
+                        || (matches!(mode, NotchMode::CompactHovered)
+                            && MEDIA_ACTIVE.with(Cell::get));
+                    app.set_closed(show_closed);
                 }
             }
         });
@@ -487,7 +486,11 @@ fn install_runtime(
                 runtime.media_active = frame.media_active;
                 MEDIA_ACTIVE.with(|active| active.set(frame.media_active));
                 if !app.get_expanded() {
-                    apply_mode(&app, collapsed_mode());
+                    if overlay.cursor_inside_notch(&app) {
+                        apply_mode(&app, NotchMode::CompactHovered);
+                    } else {
+                        apply_mode(&app, collapsed_mode());
+                    }
                 }
             }
         }
