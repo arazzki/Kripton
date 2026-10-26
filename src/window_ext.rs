@@ -236,6 +236,8 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
         mode,
         NotchMode::Expanded | NotchMode::Lyrics | NotchMode::Hud
     );
+    let stealth = matches!(mode, NotchMode::Stealth);
+    app.set_stealth(stealth);
 
     MORPH.with(|morph| {
         let mut morph = morph.borrow_mut();
@@ -266,7 +268,7 @@ pub fn collapsed_mode() -> NotchMode {
     if MEDIA_ACTIVE.with(Cell::get) {
         NotchMode::Closed
     } else {
-        NotchMode::Idle
+        NotchMode::Stealth
     }
 }
 
@@ -426,6 +428,7 @@ fn install_runtime(
                 if morph.width.value() <= COLLAPSE_REVEAL_WIDTH {
                     morph.pending_collapse = None;
                     app.set_expanded(false);
+                    app.set_stealth(matches!(mode, NotchMode::Stealth));
                     app.set_closed(matches!(mode, NotchMode::Closed));
                 }
             }
@@ -637,14 +640,27 @@ fn poll_media(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
         app.set_track_subtitle(subtitle.into());
     }
 
+    let track_changed = snapshot.generation != runtime.track_generation;
+    let playing_changed = snapshot.playing != runtime.playback.playing;
+    let current_projected = runtime.playback.position(now);
+    let drift_ms = (snapshot.position_ms as i64 - current_projected as i64).abs();
+
+    // Resync clock only on track change, play/pause change, initial start,
+    // or when position drifted significantly (e.g. user seeked in player).
+    // During smooth playback, keep local monotonic clock running continuously
+    // without resetting synced_at on every poll.
+    if track_changed || playing_changed || !runtime.playback.playing || drift_ms > 1500 {
+        runtime.playback = PlaybackClock {
+            position_ms: snapshot.position_ms,
+            duration_ms: snapshot.duration_ms,
+            playing: snapshot.playing,
+            synced_at: now,
+        };
+        runtime.elapsed_seconds = u64::MAX;
+    } else {
+        runtime.playback.duration_ms = snapshot.duration_ms;
+    }
     runtime.playing = snapshot.playing;
-    runtime.playback = PlaybackClock {
-        position_ms: snapshot.position_ms,
-        duration_ms: snapshot.duration_ms,
-        playing: snapshot.playing,
-        synced_at: now,
-    };
-    runtime.elapsed_seconds = u64::MAX;
 }
 
 fn update_timeline(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
@@ -704,7 +720,8 @@ fn update_lyrics_sync(app: &AppWindow, runtime: &mut Runtime, position_ms: u64) 
         Some(lyrics) if lyrics.is_synced => {
             let (prev, curr, next) = lyrics.current_window(position_ms);
             let curr_str = curr.unwrap_or("♪ ♪ ♪");
-            let line_signature = format!("{}:{}", prev.unwrap_or(""), curr_str);
+            let line_signature =
+                format!("{}:{}:{}", prev.unwrap_or(""), curr_str, next.unwrap_or(""));
             if runtime.last_synced_line.as_deref() != Some(&line_signature) {
                 runtime.last_synced_line = Some(line_signature);
                 app.set_lyrics_available(true);
