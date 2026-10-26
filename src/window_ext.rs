@@ -254,20 +254,37 @@ pub fn collapsed_mode() -> NotchMode {
     }
 }
 
-pub fn install_overlay(app: &AppWindow, media: MediaController, audio: AudioWave) {
-    try_attach(app.as_weak(), 0, media, Arc::new(audio));
+pub fn install_overlay(
+    app: &AppWindow,
+    media: MediaController,
+    audio: AudioWave,
+    store: crate::state::StateStore,
+) {
+    try_attach(app.as_weak(), 0, media, Arc::new(audio), store);
 }
 
-fn try_attach(app: Weak<AppWindow>, attempts: u32, media: MediaController, audio: Arc<AudioWave>) {
+fn try_attach(
+    app: Weak<AppWindow>,
+    attempts: u32,
+    media: MediaController,
+    audio: Arc<AudioWave>,
+    store: crate::state::StateStore,
+) {
     Timer::single_shot(Duration::from_millis(16), move || {
         let Some(app) = app.upgrade() else {
             return;
         };
 
         if let Some(overlay) = OverlayWindow::attach(&app) {
-            install_runtime(&app, overlay, media, audio);
+            install_runtime(&app, overlay, media, audio, store);
         } else if attempts < 120 {
-            try_attach(app.as_weak(), attempts + 1, media.clone(), audio.clone());
+            try_attach(
+                app.as_weak(),
+                attempts + 1,
+                media.clone(),
+                audio.clone(),
+                store,
+            );
         } else {
             eprintln!("[Kripton] native window handle was not available after 2 seconds");
         }
@@ -311,6 +328,11 @@ struct Runtime {
     track_generation: u64,
     playback: PlaybackClock,
     elapsed_seconds: u64,
+    lyrics: crate::lyrics::LyricsManager,
+    current_lyrics: Option<crate::lyrics::SyncedLyrics>,
+    last_lyrics_track: String,
+    last_synced_line: Option<String>,
+    store: crate::state::StateStore,
 }
 
 fn install_runtime(
@@ -318,6 +340,7 @@ fn install_runtime(
     overlay: OverlayWindow,
     media: MediaController,
     audio: Arc<AudioWave>,
+    store: crate::state::StateStore,
 ) {
     let weak = app.as_weak();
     let runtime = Rc::new(RefCell::new(Runtime {
@@ -340,6 +363,11 @@ fn install_runtime(
             synced_at: Instant::now(),
         },
         elapsed_seconds: u64::MAX,
+        lyrics: crate::lyrics::LyricsManager::default(),
+        current_lyrics: None,
+        last_lyrics_track: String::new(),
+        last_synced_line: None,
+        store,
     }));
 
     install_media_callbacks(app, &runtime);
@@ -402,7 +430,12 @@ fn install_runtime(
             } else if !app.get_expanded() {
                 let entered = *runtime.entered_at.get_or_insert(now);
                 if now.duration_since(entered) >= HOVER_OPEN_DELAY {
-                    apply_mode(&app, NotchMode::Expanded);
+                    let mode = if app.get_active_page() == 0 && app.get_lyrics_enabled() {
+                        NotchMode::Lyrics
+                    } else {
+                        NotchMode::Expanded
+                    };
+                    apply_mode(&app, mode);
                     runtime.entered_at = None;
                 }
             } else {
@@ -507,9 +540,26 @@ fn install_media_callbacks(app: &AppWindow, runtime: &Rc<RefCell<Runtime>>) {
     });
 
     let weak_lyrics = app.as_weak();
+    let runtime_lyrics = runtime.clone();
     app.on_lyrics_toggle(move || {
         if let Some(app) = weak_lyrics.upgrade() {
-            app.set_lyrics_enabled(!app.get_lyrics_enabled());
+            let new_state = !app.get_lyrics_enabled();
+            app.set_lyrics_enabled(new_state);
+            runtime_lyrics
+                .borrow()
+                .store
+                .update(|state| state.lyrics_enabled = new_state);
+
+            if app.get_expanded() && app.get_active_page() == 0 {
+                apply_mode(
+                    &app,
+                    if new_state {
+                        NotchMode::Lyrics
+                    } else {
+                        NotchMode::Expanded
+                    },
+                );
+            }
         }
     });
 }
@@ -529,6 +579,7 @@ fn poll_media(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
     if snapshot.generation != runtime.track_generation {
         runtime.track_generation = snapshot.generation;
         app.set_has_album_art(false);
+        app.set_lyrics_glow_color(slint::Color::from_argb_u8(255, 30, 58, 138));
     }
 
     // Artwork is decoded on the SMTC worker; the texture must be built here on
@@ -538,6 +589,8 @@ fn poll_media(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
             if art.generation == snapshot.generation {
                 app.set_album_art(artwork_image(&art));
                 app.set_has_album_art(true);
+                let (r, g, b) = art.dominant_color;
+                app.set_lyrics_glow_color(slint::Color::from_argb_u8(255, r, g, b));
             }
         }
     }
@@ -593,6 +646,81 @@ fn update_timeline(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
         app.set_remaining_text(
             format!("-{}", format_time(duration.saturating_sub(position))).into(),
         );
+    }
+
+    // Live lyrics synchronization
+    update_lyrics_sync(app, runtime, position);
+}
+
+fn update_lyrics_sync(app: &AppWindow, runtime: &mut Runtime, position_ms: u64) {
+    let snapshot = runtime.media.snapshot();
+    if !snapshot.available || snapshot.title.is_empty() {
+        if runtime.last_synced_line.is_some() {
+            runtime.last_synced_line = None;
+            app.set_lyrics_available(false);
+            app.set_lyrics_loading(false);
+            app.set_lyrics_line_curr("Play a track to see lyrics".into());
+            app.set_lyrics_line_prev("".into());
+            app.set_lyrics_line_next("".into());
+        }
+        return;
+    }
+
+    let track_key = crate::lyrics::LyricsManager::track_key(&snapshot.artist, &snapshot.title);
+    if runtime.last_lyrics_track != track_key {
+        runtime.last_lyrics_track = track_key;
+        runtime.current_lyrics =
+            runtime
+                .lyrics
+                .get_or_fetch(&snapshot.artist, &snapshot.title, snapshot.duration_ms);
+        runtime.last_synced_line = None;
+    } else if runtime.current_lyrics.is_none() {
+        runtime.current_lyrics =
+            runtime
+                .lyrics
+                .get_or_fetch(&snapshot.artist, &snapshot.title, snapshot.duration_ms);
+    }
+
+    match &runtime.current_lyrics {
+        Some(lyrics) if lyrics.is_synced => {
+            let (prev, curr, next) = lyrics.current_window(position_ms);
+            let curr_str = curr.unwrap_or("♪ ♪ ♪");
+            let line_signature = format!("{}:{}", prev.unwrap_or(""), curr_str);
+            if runtime.last_synced_line.as_deref() != Some(&line_signature) {
+                runtime.last_synced_line = Some(line_signature);
+                app.set_lyrics_available(true);
+                app.set_lyrics_loading(false);
+                app.set_lyrics_line_prev(prev.unwrap_or("").into());
+                app.set_lyrics_line_curr(curr_str.into());
+                app.set_lyrics_line_next(next.unwrap_or("").into());
+            }
+        }
+        Some(lyrics) => {
+            if runtime.last_synced_line.as_deref() != Some("unsynced") {
+                runtime.last_synced_line = Some("unsynced".into());
+                app.set_lyrics_available(false);
+                app.set_lyrics_loading(false);
+                app.set_lyrics_line_curr(
+                    lyrics
+                        .plain_lyrics
+                        .as_deref()
+                        .unwrap_or("Lyrics unavailable")
+                        .into(),
+                );
+                app.set_lyrics_line_prev("".into());
+                app.set_lyrics_line_next("".into());
+            }
+        }
+        None => {
+            if runtime.last_synced_line.as_deref() != Some("loading") {
+                runtime.last_synced_line = Some("loading".into());
+                app.set_lyrics_available(false);
+                app.set_lyrics_loading(true);
+                app.set_lyrics_line_curr("Looking for lyrics...".into());
+                app.set_lyrics_line_prev("".into());
+                app.set_lyrics_line_next("".into());
+            }
+        }
     }
 }
 

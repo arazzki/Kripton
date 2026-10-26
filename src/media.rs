@@ -82,6 +82,7 @@ pub struct Artwork {
     pub width: u32,
     pub height: u32,
     pub rgba: Vec<u8>,
+    pub dominant_color: (u8, u8, u8),
 }
 
 #[derive(Default)]
@@ -458,12 +459,51 @@ fn decode_artwork(bytes: &[u8], generation: u64) -> Option<Artwork> {
         .resize_to_fill(ART_SIZE, ART_SIZE, image::imageops::FilterType::Triangle)
         .to_rgba8();
     let (width, height) = rgba.dimensions();
+    let raw = rgba.into_raw();
+    let dominant_color = compute_dominant_color(&raw);
     Some(Artwork {
         generation,
         width,
         height,
-        rgba: rgba.into_raw(),
+        rgba: raw,
+        dominant_color,
     })
+}
+
+fn compute_dominant_color(rgba: &[u8]) -> (u8, u8, u8) {
+    let mut total_r = 0u64;
+
+    let mut total_g = 0u64;
+
+    let mut total_b = 0u64;
+
+    let mut count = 0u64;
+
+    for chunk in rgba.as_chunks::<4>().0 {
+        let (r, g, b, a) = (chunk[0], chunk[1], chunk[2], chunk[3]);
+
+        if a > 128 {
+            let brightness = (r as u32 + g as u32 + b as u32) / 3;
+
+            let diff = (r as i32 - g as i32).abs() + (g as i32 - b as i32).abs();
+
+            if brightness > 30 && brightness < 235 && diff > 15 {
+                total_r += r as u64;
+
+                total_g += g as u64;
+
+                total_b += b as u64;
+
+                count += 1;
+            }
+        }
+    }
+
+    if let Some(r) = total_r.checked_div(count) {
+        (r as u8, (total_g / count) as u8, (total_b / count) as u8)
+    } else {
+        (30, 58, 138)
+    }
 }
 
 fn app_label(aumid: &str) -> String {
@@ -493,7 +533,7 @@ fn app_label(aumid: &str) -> String {
 
 /// Minimal blocking executor for `windows-future` operations. The completion
 /// handler installed by `AsyncFuture` calls `wake`, which unparks this thread.
-fn block_on<F: Future>(future: F) -> F::Output {
+pub(crate) fn block_on<F: Future>(future: F) -> F::Output {
     struct ThreadWake(thread::Thread);
 
     impl Wake for ThreadWake {

@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod living;
+mod lyrics;
 mod media;
 mod spring;
 mod state;
@@ -50,7 +51,7 @@ fn main() -> Result<(), slint::PlatformError> {
 
     window_ext::apply_mode(&app, window_ext::collapsed_mode());
     app.show()?;
-    window_ext::install_overlay(&app, media, audio);
+    window_ext::install_overlay(&app, media, audio, store.clone());
 
     let _clock_timer = start_clock(&app);
     let _battery_timer = start_battery(&app);
@@ -69,11 +70,7 @@ fn apply_persisted_state(app: &AppWindow, store: &StateStore) {
     app.set_page_subtitle(page.subtitle().into());
     app.set_lyrics_enabled(store.with(|state| state.lyrics_enabled));
     app.set_build_label(
-        format!(
-            "v{} · Sprint 2 · Music & Live Wave",
-            env!("CARGO_PKG_VERSION")
-        )
-        .into(),
+        format!("v{} · Sprint 3 · Synced Lyrics", env!("CARGO_PKG_VERSION")).into(),
     );
 }
 
@@ -85,14 +82,16 @@ fn wire_callbacks(app: &AppWindow, store: &StateStore) {
             if !expand {
                 window_ext::lock_hover_until_leave();
             }
-            window_ext::apply_mode(
-                &app,
-                if expand {
-                    NotchMode::Expanded
+            let mode = if expand {
+                if app.get_active_page() == 0 && app.get_lyrics_enabled() {
+                    NotchMode::Lyrics
                 } else {
-                    window_ext::collapsed_mode()
-                },
-            );
+                    NotchMode::Expanded
+                }
+            } else {
+                window_ext::collapsed_mode()
+            };
+            window_ext::apply_mode(&app, mode);
         }
     });
 
@@ -106,6 +105,15 @@ fn wire_callbacks(app: &AppWindow, store: &StateStore) {
             app.set_active_page(page.index() as i32);
             app.set_page_title(page.title().into());
             app.set_page_subtitle(page.subtitle().into());
+
+            if app.get_expanded() {
+                let mode = if page == Page::Music && app.get_lyrics_enabled() {
+                    NotchMode::Lyrics
+                } else {
+                    NotchMode::Expanded
+                };
+                window_ext::apply_mode(&app, mode);
+            }
         }
     });
 

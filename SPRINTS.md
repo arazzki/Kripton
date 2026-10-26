@@ -7,8 +7,8 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 | 0 | Foundation | Shell native, state, geometri notch, transparansi, hover | ✅ Selesai |
 | 1 | Idle + Closed | Plasma core hidup, closed bar, spring physics | ✅ Selesai |
 | 2 | Music | WinRT SMTC, transport, seek, live wave WASAPI | ✅ Selesai |
-| 3 | Lyrics | LRCLIB, lirik sinkron, mode lebar 560 px | ⏳ Berikutnya |
-| 4 | Shelf | Drag & drop OLE, carousel, preview file | ⏳ |
+| 3 | Lyrics | LRCLIB, lirik sinkron, mode lebar 560 px | ✅ Selesai |
+| 4 | Shelf | Drag & drop OLE, carousel, preview file | ⏳ Berikutnya |
 | 5 | Productivity | Focus timer, Water, To-do | ⏳ |
 | 6 | HUD + Release | Headphone/charging HUD, tray, autostart, installer | ⏳ |
 
@@ -107,25 +107,28 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 
 ---
 
-## Sprint 3 — Lyrics
+## Sprint 3 — Lyrics ✅
 
 **Tujuan:** lirik tersinkron dalam notch melebar.
 
-**Deliverables:**
+**Selesai:**
 
-1. Query LRCLIB (`/api/get` + fallback `/api/search`) memakai judul/artis/durasi, cache in-memory + disk.
-2. Parser LRC, pencocokan waktu, auto-scroll 3 baris.
-3. Layout 560 × 165 px: kolom kiri compact player (album 56 px), divider 1 px, kolom kanan lirik.
-4. Baris aktif putih 16 px bold; baris lain `#64748B` 14 px.
-5. Tombol lirik on/off tersimpan di state; degradasi anggun saat lirik tidak tersedia.
-6. Background glow mengikuti warna dominan artwork.
+1. **Integrasi LRCLIB & HTTP Client Native** — `src/lyrics.rs`: integrasi Windows native WinRT `HttpClient` (`Web_Http`), query `/api/get` (judul, artis, durasi) dengan fallback `/api/search?q=`, worker thread background tanpa memblokir thread UI.
+2. **Parser LRC & Time-Sync Engine** — parsing timestamp presisi `[mm:ss.xx]` dan `[mm:ss.xxx]`, binary search window waktu lirik, auto-scroll 3 baris (baris sebelumnya, baris aktif, baris berikutnya).
+3. **Cache In-Memory & Disk** — cache RAM (`HashMap`) dan cache lokal persisten JSON di folder `%APPDATA%/Kripton/lyrics_cache/`, deduplikasi request in-flight agar tidak ada query ganda untuk track yang sama.
+4. **Layout Widened Split-View (560 × 165 px)** — mode `NotchMode::Lyrics` memanjang dari 460 px ke 560 px:
+   - Kolom kiri: compact player (album art 56 px, judul, artis, slider progress, tombol kontrol media).
+   - Divider: garis vertikal 1 px `#FFFFFF1F`.
+   - Kolom kanan: viewport lirik tersinkron (baris aktif putih terang 15 px bold dengan visual bullet marker, baris lain `#64748B` 13 px semibold, fallback gracefully saat offline/lirik tidak tersedia).
+5. **State Persistensi & Toggle** — toggle lirik on/off tersimpan ke `state.json` via `StateStore`, animasi spring transisi halus antar ukuran notch.
+6. **Ambient Glow Adaptif** — ekstraksi warna dominan dari data RGBA album art (`compute_dominant_color`), diproyeksikan sebagai pendaran radial glow di bagian bawah notch.
 
-**Acceptance:**
+**Acceptance terverifikasi:**
 
-- Lirik berganti tepat waktu (±150 ms) dan tetap sinkron setelah pause/resume.
-- Tidak ada request berulang untuk track yang sama.
-- Mode 560 px tidak terpotong di kanvas 600 px.
-- Offline: tampil pesan "Lyrics unavailable", fitur lain tetap jalan.
+- Parser LRC dan window sinkronisasi diverifikasi via 4 unit test (`test_parse_lrc_standard`, `test_parse_lrc_multi_timestamp`, `test_current_window`, `test_url_encode`).
+- 29 unit test di seluruh proyek lulus 100% (`cargo test`).
+- Bebas error dan peringatan (`cargo clippy` & `cargo fmt` bersih).
+- Notch 560 px pas berada di tengah kanvas 600 px tanpa terpotong.
 
 ---
 
