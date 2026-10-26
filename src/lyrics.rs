@@ -11,7 +11,12 @@ use std::{
 };
 
 use serde::{Deserialize, Serialize};
-use windows::{core::HSTRING, Foundation::Uri, Web::Http::HttpClient};
+use windows::{
+    core::HSTRING,
+    Foundation::Uri,
+    Web::Http::HttpClient,
+    Win32::System::WinRT::{RoInitialize, RoUninitialize, RO_INIT_MULTITHREADED},
+};
 
 use crate::state::APP_DIR_NAME;
 
@@ -255,6 +260,10 @@ impl LyricsManager {
             thread::Builder::new()
                 .name("kripton-lyrics-fetcher".into())
                 .spawn(move || {
+                    unsafe {
+                        let _ = RoInitialize(RO_INIT_MULTITHREADED);
+                    }
+
                     let result = fetch_lrclib(
                         &inner_clone.client,
                         &artist_owned,
@@ -320,6 +329,10 @@ impl LyricsManager {
                     }
                     if let Ok(mut in_flight) = inner_clone.in_flight.lock() {
                         in_flight.remove(&key_clone);
+                    }
+
+                    unsafe {
+                        RoUninitialize();
                     }
                 })
                 .expect("failed to spawn lyrics fetcher thread");
