@@ -28,17 +28,52 @@ use windows::{
     },
 };
 
-use crate::{state::NotchMode, AppWindow};
+use crate::{
+    living::{Living, LivingFrame},
+    spring::{Spring, SpringConfig},
+    state::NotchMode,
+    system::AudioMeter,
+    AppWindow,
+};
 
 const HOVER_OPEN_DELAY: Duration = Duration::from_millis(60);
 const HOVER_CLOSE_DELAY: Duration = Duration::from_millis(250);
 const HOVER_POLL_INTERVAL: Duration = Duration::from_millis(16);
 const HOVER_PADDING: f32 = 6.0;
+const LIVING_EVERY: u64 = 3; // Living properties update at ~20 fps.
+const AUDIO_EVERY: u64 = 6; // Audio peak samples at ~10 Hz.
+const COLLAPSE_REVEAL_WIDTH: f32 = 250.0;
 
 thread_local! {
     /// Set after the user explicitly collapses the notch with a click. Hover
     /// re-expansion stays disabled until the pointer leaves the notch once.
     static HOVER_LOCKED_UNTIL_LEAVE: Cell<bool> = const { Cell::new(false) };
+    /// Whether the default render endpoint currently has audible output.
+    static MEDIA_ACTIVE: Cell<bool> = const { Cell::new(false) };
+    /// Animated notch geometry. Shared by every mode transition so a target
+    /// change mid-flight reverses the spring instead of snapping.
+    static MORPH: RefCell<Morph> = RefCell::new(Morph::new());
+}
+
+struct Morph {
+    width: Spring,
+    height: Spring,
+    config: SpringConfig,
+    /// A collapse requested while the notch is still wide. The expanded shell
+    /// stays visible until the spring is close to compact size.
+    pending_collapse: Option<NotchMode>,
+}
+
+impl Morph {
+    fn new() -> Self {
+        let (width, height) = NotchMode::Idle.size();
+        Self {
+            width: Spring::new(width),
+            height: Spring::new(height),
+            config: SpringConfig::default(),
+            pending_collapse: None,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -152,16 +187,69 @@ impl OverlayWindow {
             && y >= top
             && y <= top + notch_height + padding
     }
+
+    /// Cursor position relative to the centre of the notch, in logical pixels.
+    /// The living model uses this for the ferrofluid pull.
+    fn cursor_relative_to_notch(&self, app: &AppWindow) -> Option<(f32, f32)> {
+        let mut cursor = POINT::default();
+        if unsafe { GetCursorPos(&mut cursor) }.is_err() {
+            return None;
+        }
+
+        let mut window_rect = RECT::default();
+        if unsafe { GetWindowRect(self.hwnd, &mut window_rect) }.is_err() {
+            return None;
+        }
+
+        let scale = app.window().scale_factor();
+        let notch_height = app.get_notch_height() * scale;
+        let window_width = (window_rect.right - window_rect.left) as f32;
+        let centre_x = window_rect.left as f32 + window_width * 0.5;
+        let centre_y = window_rect.top as f32 + notch_height * 0.5;
+
+        Some((
+            (cursor.x as f32 - centre_x) / scale,
+            (cursor.y as f32 - centre_y) / scale,
+        ))
+    }
 }
 
 pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
     let (width, height) = mode.size();
-    app.set_notch_width(width);
-    app.set_notch_height(height);
-    app.set_expanded(matches!(
+    let expanded = matches!(
         mode,
         NotchMode::Expanded | NotchMode::Lyrics | NotchMode::Hud
-    ));
+    );
+
+    MORPH.with(|morph| {
+        let mut morph = morph.borrow_mut();
+        morph.width.set_target(width);
+        morph.height.set_target(height);
+
+        if expanded {
+            morph.pending_collapse = None;
+            app.set_expanded(true);
+            app.set_closed(false);
+        } else if app.get_expanded() && morph.width.value() > COLLAPSE_REVEAL_WIDTH {
+            // Keep the expanded shell visible until the black shape has shrunk
+            // close to compact size, then swap content in the runtime tick.
+            morph.pending_collapse = Some(mode);
+        } else {
+            morph.pending_collapse = None;
+            app.set_expanded(false);
+            app.set_closed(matches!(mode, NotchMode::Closed));
+        }
+    });
+}
+
+/// Mode to return to when the pointer leaves the notch: Closed while media is
+/// playing, otherwise Idle.
+pub fn collapsed_mode() -> NotchMode {
+    if MEDIA_ACTIVE.with(Cell::get) {
+        NotchMode::Closed
+    } else {
+        NotchMode::Idle
+    }
 }
 
 pub fn install_overlay(app: &AppWindow) {
@@ -175,7 +263,7 @@ fn try_attach(app: Weak<AppWindow>, attempts: u32) {
         };
 
         if let Some(overlay) = OverlayWindow::attach(&app) {
-            install_hover_controller(&app, overlay);
+            install_runtime(&app, overlay);
         } else if attempts < 120 {
             try_attach(app.as_weak(), attempts + 1);
         } else {
@@ -184,19 +272,32 @@ fn try_attach(app: Weak<AppWindow>, attempts: u32) {
     });
 }
 
-fn install_hover_controller(app: &AppWindow, overlay: OverlayWindow) {
-    struct HoverRuntime {
+fn install_runtime(app: &AppWindow, overlay: OverlayWindow) {
+    struct Runtime {
         entered_at: Option<Instant>,
         left_at: Option<Instant>,
         click_through: bool,
+        last_tick: Instant,
+        last_living: Instant,
+        ticks: u64,
+        peak: f32,
+        media_active: bool,
     }
 
     let weak = app.as_weak();
-    let runtime = Rc::new(RefCell::new(HoverRuntime {
+    let runtime = Rc::new(RefCell::new(Runtime {
         entered_at: None,
         left_at: None,
         click_through: true,
+        last_tick: Instant::now(),
+        last_living: Instant::now(),
+        ticks: 0,
+        peak: 0.0,
+        media_active: MEDIA_ACTIVE.with(Cell::get),
     }));
+
+    let mut living = Living::new();
+    let mut meter = AudioMeter::new();
 
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, HOVER_POLL_INTERVAL, move || {
@@ -204,10 +305,34 @@ fn install_hover_controller(app: &AppWindow, overlay: OverlayWindow) {
             return;
         };
 
-        let inside = overlay.cursor_inside_notch(&app);
         let now = Instant::now();
         let mut runtime = runtime.borrow_mut();
+        let dt = (now - runtime.last_tick).as_secs_f32().clamp(0.001, 0.05);
+        runtime.last_tick = now;
+        runtime.ticks = runtime.ticks.wrapping_add(1);
 
+        // Advance the geometry spring every tick for 60 fps morphs.
+        MORPH.with(|morph| {
+            let mut morph = morph.borrow_mut();
+            let config = morph.config;
+            let width_moving = morph.width.step(dt, config);
+            let height_moving = morph.height.step(dt, config);
+            if width_moving || height_moving {
+                app.set_notch_width(morph.width.value());
+                app.set_notch_height(morph.height.value());
+            }
+
+            if let Some(mode) = morph.pending_collapse {
+                if morph.width.value() <= COLLAPSE_REVEAL_WIDTH {
+                    morph.pending_collapse = None;
+                    app.set_expanded(false);
+                    app.set_closed(matches!(mode, NotchMode::Closed));
+                }
+            }
+        });
+
+        // Hover state and adaptive click-through.
+        let inside = overlay.cursor_inside_notch(&app);
         let should_click_through = !inside;
         if runtime.click_through != should_click_through {
             overlay.set_click_through(should_click_through);
@@ -218,10 +343,7 @@ fn install_hover_controller(app: &AppWindow, overlay: OverlayWindow) {
             runtime.left_at = None;
             if HOVER_LOCKED_UNTIL_LEAVE.with(Cell::get) {
                 runtime.entered_at = None;
-                return;
-            }
-
-            if !app.get_expanded() {
+            } else if !app.get_expanded() {
                 let entered = *runtime.entered_at.get_or_insert(now);
                 if now.duration_since(entered) >= HOVER_OPEN_DELAY {
                     apply_mode(&app, NotchMode::Expanded);
@@ -237,18 +359,58 @@ fn install_hover_controller(app: &AppWindow, overlay: OverlayWindow) {
             if app.get_expanded() {
                 let left = *runtime.left_at.get_or_insert(now);
                 if now.duration_since(left) >= HOVER_CLOSE_DELAY {
-                    apply_mode(&app, NotchMode::Idle);
+                    apply_mode(&app, collapsed_mode());
                     runtime.left_at = None;
                 }
             } else {
                 runtime.left_at = None;
             }
         }
+
+        // Living mascot at ~30 fps, audio sampled at ~10 Hz.
+        if runtime.ticks.is_multiple_of(LIVING_EVERY) {
+            let living_dt = (now - runtime.last_living).as_secs_f32().clamp(0.001, 0.1);
+            runtime.last_living = now;
+
+            if runtime.ticks.is_multiple_of(AUDIO_EVERY) {
+                runtime.peak = meter.peak();
+            }
+
+            let frame = living.tick(
+                living_dt,
+                overlay.cursor_relative_to_notch(&app),
+                runtime.peak,
+            );
+            apply_living(&app, &frame);
+
+            if frame.media_active != runtime.media_active {
+                runtime.media_active = frame.media_active;
+                MEDIA_ACTIVE.with(|active| active.set(frame.media_active));
+                if !app.get_expanded() {
+                    apply_mode(&app, collapsed_mode());
+                }
+            }
+        }
     });
 
-    // The overlay needs its hover loop for the whole process lifetime. Leaking
+    // The overlay needs its runtime for the whole process lifetime. Leaking
     // this handle is intentional; dropping it would silently stop the loop.
     std::mem::forget(timer);
+}
+
+fn apply_living(app: &AppWindow, frame: &LivingFrame) {
+    app.set_orb_scale(frame.orb_scale);
+    app.set_orb_glow(frame.orb_glow);
+    app.set_aura_scale(frame.aura_scale);
+    app.set_aura_opacity(frame.aura_opacity);
+    app.set_corona_angle(frame.corona_angle);
+    app.set_orb_offset_x(frame.orb_offset_x);
+    app.set_orb_offset_y(frame.orb_offset_y);
+    app.set_wave_0(frame.wave[0]);
+    app.set_wave_1(frame.wave[1]);
+    app.set_wave_2(frame.wave[2]);
+    app.set_wave_3(frame.wave[3]);
+    app.set_wave_4(frame.wave[4]);
 }
 
 pub fn lock_hover_until_leave() {

@@ -109,6 +109,55 @@ def render_orb(size: int = 1024) -> Image.Image:
     return out
 
 
+def render_corona(size: int = 1024) -> Image.Image:
+    """Render the rotating emerald corona that orbits the plasma core.
+
+    Kept on its own transparent canvas so Slint can rotate it continuously
+    without re-rendering the core or the outer aura.
+    """
+    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+    center = (size - 1) / 2.0
+    x = (xx - center) / (size * 0.5)
+    y = (yy - center) / (size * 0.5)
+    r = np.sqrt(x * x + y * y)
+    theta = np.arctan2(y, x)
+
+    ring_radius = 0.36
+    ring = np.exp(-(((r - ring_radius) / 0.075) ** 2))
+
+    # Three slow lobes plus fine filaments give the ring a liquid, ionized edge.
+    lobes = 0.5 + 0.5 * np.sin(3.0 * theta + 0.7)
+    filaments = 0.5 + 0.5 * np.sin(11.0 * theta - 2.1)
+    wisp = 0.35 + 0.65 * (0.65 * lobes + 0.35 * filaments)
+
+    hotspots = np.zeros_like(r)
+    for angle, width, strength in ((2.1, 0.20, 0.85), (4.4, 0.16, 0.55), (5.6, 0.24, 0.65)):
+        delta = np.angle(np.exp(1j * (theta - angle)))
+        hotspots += strength * np.exp(-((delta / width) ** 2)) * np.exp(
+            -(((r - ring_radius) / 0.11) ** 2)
+        )
+
+    bloom = np.exp(-(((r - 0.43) / 0.14) ** 2)) * 0.20
+    alpha = np.clip(ring * (0.30 + 0.70 * wisp) + hotspots * 0.70 + bloom, 0.0, 1.0) * 0.88
+
+    hot = np.clip(hotspots, 0.0, 1.0)
+    rgb = EMERALD * (1.0 - hot[..., None]) + CYAN * hot[..., None]
+    return _rgba(rgb, alpha).filter(ImageFilter.GaussianBlur(size * 0.006))
+
+
+def render_aura(size: int = 1024) -> Image.Image:
+    """Render the soft violet halo that sits behind the core."""
+    yy, xx = np.mgrid[0:size, 0:size].astype(np.float32)
+    center = (size - 1) / 2.0
+    r = np.sqrt(((xx - center) / (size * 0.5)) ** 2 + ((yy - center) / (size * 0.5)) ** 2)
+
+    alpha = np.exp(-((r / 0.48) ** 2)) * 0.58
+    alpha *= np.clip((1.16 - r) / 0.34, 0.0, 1.0)
+    cyan_weight = np.exp(-(((r - 0.30) / 0.22) ** 2))
+    rgb = VIOLET * (1.0 - cyan_weight[..., None]) + CYAN * cyan_weight[..., None]
+    return _rgba(rgb, alpha).filter(ImageFilter.GaussianBlur(size * 0.030))
+
+
 def render_icon(orb_master: Image.Image) -> Image.Image:
     size = 1024
     icon = Image.new("RGBA", (size, size), (0, 0, 0, 0))
@@ -286,6 +335,16 @@ def main() -> None:
     print("Rendering Ionized Plasma Core…")
     orb = render_orb(1024)
     orb.resize((512, 512), Image.Resampling.LANCZOS).save(ASSETS / "plasma_core.png")
+
+    print("Rendering rotating corona…")
+    render_corona(1024).resize((512, 512), Image.Resampling.LANCZOS).save(
+        ASSETS / "plasma_corona.png"
+    )
+
+    print("Rendering outer aura…")
+    render_aura(1024).resize((512, 512), Image.Resampling.LANCZOS).save(
+        ASSETS / "plasma_aura.png"
+    )
 
     print("Rendering app icon…")
     icon = render_icon(orb)

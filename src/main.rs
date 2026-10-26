@@ -1,12 +1,16 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod living;
+mod spring;
 mod state;
+mod system;
 mod window_ext;
 
 use std::{fs::OpenOptions, io::Write, time::Duration};
 
 use chrono::Local;
 use slint::{ComponentHandle, Timer, TimerMode};
+use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 
 use state::{NotchMode, Page, StateStore};
 
@@ -15,6 +19,13 @@ slint::include_modules!();
 fn main() -> Result<(), slint::PlatformError> {
     install_panic_logger();
     log_line("Kripton starting");
+
+    // SMTC (Sprint 2) and OLE drag/drop (Sprint 4) both need a single-threaded
+    // apartment. Initialise before winit creates the event loop.
+    let hr = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
+    if hr.is_err() {
+        log_line(&format!("CoInitializeEx failed: {hr:?}"));
+    }
 
     if !window_ext::acquire_single_instance() {
         log_line("another Kripton instance is already running; exiting");
@@ -28,12 +39,14 @@ fn main() -> Result<(), slint::PlatformError> {
     apply_persisted_state(&app, &store);
     wire_callbacks(&app, &store);
     update_clock(&app);
+    apply_battery(&app, system::read_battery());
 
-    window_ext::apply_mode(&app, NotchMode::Idle);
+    window_ext::apply_mode(&app, window_ext::collapsed_mode());
     app.show()?;
     window_ext::install_overlay(&app);
 
     let _clock_timer = start_clock(&app);
+    let _battery_timer = start_battery(&app);
     log_line("event loop ready");
 
     let result = app.run();
@@ -48,7 +61,7 @@ fn apply_persisted_state(app: &AppWindow, store: &StateStore) {
     app.set_page_title(page.title().into());
     app.set_page_subtitle(page.subtitle().into());
     app.set_lyrics_enabled(store.with(|state| state.lyrics_enabled));
-    app.set_build_label(format!("v{} · Sprint 0 · Foundation", env!("CARGO_PKG_VERSION")).into());
+    app.set_build_label(format!("v{} · Sprint 1 · Living Notch", env!("CARGO_PKG_VERSION")).into());
 }
 
 fn wire_callbacks(app: &AppWindow, store: &StateStore) {
@@ -64,7 +77,7 @@ fn wire_callbacks(app: &AppWindow, store: &StateStore) {
                 if expand {
                     NotchMode::Expanded
                 } else {
-                    NotchMode::Idle
+                    window_ext::collapsed_mode()
                 },
             );
         }
@@ -112,6 +125,31 @@ fn update_clock(app: &AppWindow) {
     let now = Local::now();
     app.set_clock_text(now.format("%H:%M").to_string().into());
     app.set_date_text(now.format("%a %d %b %Y").to_string().into());
+}
+
+fn start_battery(app: &AppWindow) -> Timer {
+    let weak = app.as_weak();
+    let timer = Timer::default();
+    timer.start(TimerMode::Repeated, Duration::from_secs(30), move || {
+        if let Some(app) = weak.upgrade() {
+            apply_battery(&app, system::read_battery());
+        }
+    });
+    timer
+}
+
+fn apply_battery(app: &AppWindow, status: system::BatteryStatus) {
+    app.set_battery_present(status.present);
+    app.set_battery_on_ac(status.on_ac);
+    app.set_battery_percent(status.percent);
+    app.set_battery_charging(status.charging);
+
+    let arc = system::battery_arc(status.percent);
+    app.set_battery_arc_x(arc.end_x);
+    app.set_battery_arc_y(arc.end_y);
+    app.set_battery_arc_large(arc.large);
+    app.set_battery_arc_visible(arc.visible && status.present);
+    app.set_battery_full(arc.full && status.present);
 }
 
 fn install_panic_logger() {

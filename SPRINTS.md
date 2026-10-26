@@ -5,8 +5,8 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 | # | Sprint | Fokus | Status |
 | --- | --- | --- | --- |
 | 0 | Foundation | Shell native, state, geometri notch, transparansi, hover | ✅ Selesai |
-| 1 | Idle + Closed | Plasma core hidup, closed bar, spring physics | ⏳ Berikutnya |
-| 2 | Music | WinRT SMTC, transport, seek, live wave WASAPI | ⏳ |
+| 1 | Idle + Closed | Plasma core hidup, closed bar, spring physics | ✅ Selesai |
+| 2 | Music | WinRT SMTC, transport, seek, live wave WASAPI | ⏳ Berikutnya |
 | 3 | Lyrics | LRCLIB, lirik sinkron, mode lebar 560 px | ⏳ |
 | 4 | Shelf | Drag & drop OLE, carousel, preview file | ⏳ |
 | 5 | Productivity | Focus timer, Water, To-do | ⏳ |
@@ -38,26 +38,36 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 
 ---
 
-## Sprint 1 — Idle + Closed
+## Sprint 1 — Idle + Closed ✅
 
 **Tujuan:** menghidupkan maskot dan membuat notch tertutup benar-benar informatif.
 
-**Deliverables:**
+**Selesai:**
 
-1. **Plasma core** — breathing 0.25 Hz multi-layer (core/corona/aura) dengan fase berbeda; aura bereaksi terhadap kursor (ferrofluid pull, `Δp = u · Lmax(1 − e^(−d/λ))`).
-2. **Ferrofluid controller** — polling kursor 60 fps, jarak Euclidean ke pusat orb, redaman saat kursor menjauh.
-3. **Closed mode** — notch 210 × 38 px: battery ring 18 px (`#34D399` di atas `#064E3B`), jam 24-jam 15 px bold, 5 bar live wave placeholder (data audio menyusul di Sprint 2).
-4. **Battery reader** — Win32 `GetSystemPowerStatus`, update 30 detik dan saat status berubah.
-5. **Spring** — ganti animasi `cubic-bezier` dengan spring teredam ζ≈0.72 untuk lebar/tinggi (target 60 fps, tanpa jitter).
-6. **Idle/Closed switching** — idle saat tidak ada aktivitas, closed saat media/timer aktif; `state.json` mengingat mode terakhir.
+1. **Plasma core tiga lapis** — `plasma_core.png` (inti), `plasma_corona.png` (cincin berputar 9°/s), `plasma_aura.png` (halo violet). Breathing 0.25 Hz dengan fase aura tertinggal 0.55 rad agar terasa cair, bukan tiga gambar yang berdenyut serempak.
+2. **Ferrofluid pull** — `Δp = u · Lmax(1 − e^(−d/λ))` dengan `Lmax = 4.2 px`, `λ = 140 px`, fade halus di tepi 320 px. Posisi orb mengikuti kursor dengan exponential smoothing, tidak pernah keluar dari notch.
+3. **Closed mode** — notch 210 × 38 px: battery ring 18 px (`#34D399`/`#22C55E` di atas `#064E3B`), jam 24-jam 15 px bold, 5 pill bar 2.5 px. Desktop tanpa baterai menampilkan ikon AC.
+4. **Battery reader** — `GetSystemPowerStatus`, polling 30 detik, arc dihitung di Rust (`battery_arc`) supaya geometri bisa diuji tanpa Win32.
+5. **Spring** — `src/spring.rs`: semi-implicit Euler, `ζ = 0.72`, `ω = 17 rad/s`, settle < 400 ms, mendukung retarget mid-flight. Menggantikan `cubic-bezier` di Slint.
+6. **Idle/Closed switching** — `IAudioMeterInformation::GetPeakValue` pada default render endpoint, hysteresis 0,25 detik aktif / 1,6 detik hening. Ambang 0,03 (≈ −30 dBFS) karena endpoint nyata punya noise floor sampai ~0,017. Mode tidak dipersistensi: setiap start selalu Idle sampai audio benar-benar terdeteksi.
+7. **Runtime loop** — timer 16 ms untuk spring + hover; properti maskot diperbarui ~20 fps; sampling audio ~10 Hz. Shell expanded memakai layout tetap 460 × 175 px yang di-clip oleh notch agar teks tidak reflow saat morph.
+8. **COM STA** diinisialisasi di `main.rs` sebagai persiapan SMTC (Sprint 2) dan OLE drag/drop (Sprint 4).
 
-**Acceptance:**
+**Acceptance terverifikasi:**
 
-- Orb terlihat bernapas halus tanpa discontinuity.
-- Kursor di dekat orb menarik plasma secara natural, tidak membuat orb keluar dari notch.
-- Battery ring DBG akurat terhadap pengaturan Windows.
-- Ukuran kembali ke closed 210 × 38 setelah kursor pergi.
-- Tidak ada alokasi per-frame yang berlebihan; CPU idle < 2%.
+- Orb bernapas halus; screenshot Idle, Closed (audio diputar), dan Expanded diambil di Windows 1920 × 1080 @150%.
+- Kursor menarik plasma tanpa membuat orb keluar dari notch (unit test `ferrofluid_pull_is_clamped`).
+- Battery ring mengikuti persentase Windows; arc 0/25/50/75/100% diuji sebagai unit test.
+- Audio mulai → Closed; audio berhenti → Idle setelah hysteresis.
+- Ukuran kembali ke compact setelah kursor pergi; morph bisa dibalik di tengah jalan (unit test `spring_retargets_mid_flight`).
+- CPU idle ≈ **1,1% total** (≈13% satu core) pada mesin uji 12 core, build debug, animasi 20 fps. Masih di atas target PRD 0–0,3%; akan ditinjau lagi di Sprint 6 (release/LTO + animasi adaptif).
+
+**Known limitations (disengaja):**
+
+- Live wave masih diturunkan dari satu nilai peak + fase per bar; FFT WASAPI 5 pita menyusul di Sprint 2.
+- Halaman fitur di dalam shell expanded masih placeholder.
+- Battery ring pada 100% hanya berupa lingkaran penuh tanpa teks persentase (sesuai PRD Closed).
+- Belum ada tray; keluar lewat klik kanan.
 
 ---
 
