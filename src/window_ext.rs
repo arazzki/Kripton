@@ -23,7 +23,7 @@ use windows::{
         System::Threading::CreateMutexW,
         UI::WindowsAndMessaging::{
             GetCursorPos, GetWindowLongPtrW, GetWindowRect, SetWindowLongPtrW, SetWindowPos,
-            GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOSIZE, SWP_SHOWWINDOW,
+            GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_LAYERED,
             WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
         },
     },
@@ -95,7 +95,7 @@ impl OverlayWindow {
 
         unsafe {
             let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-            let wanted = current | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0;
+            let wanted = current | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0;
             if wanted != current {
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted as isize);
             }
