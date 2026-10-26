@@ -218,99 +218,107 @@ export component AppWindow inherits Window {
 
             // 1. Morphing Plasma Streak Line:
             // In Stealth: centered 120px line.
-            // On Wake to Compact: condenses, travels to the left (x: 14px), and morphs into the mascot orb!
+            // On Wake to Compact: gracefully glides to left (x: 12px), condenses and blossoms into mascot orb!
             Rectangle {
-                width: root.stealth ? 120px : 22px;
-                height: root.stealth ? 2.5px : 22px;
-                x: root.stealth ? (parent.width - self.width) / 2 : 14px;
-                y: root.stealth ? (parent.height - self.height) / 2 : (parent.height - 22px) / 2;
-                border-radius: root.stealth ? 1.25px : 11px;
+                width: root.stealth ? 120px : 26px;
+                height: root.stealth ? 2.5px : 26px;
+                x: root.stealth ? (parent.width - self.width) / 2 : 12px;
+                y: root.stealth ? (parent.height - self.height) / 2 : (parent.height - 26px) / 2;
+                border-radius: root.stealth ? 1.25px : 13px;
                 opacity: root.stealth ? 1.0 : 0.0;
                 background: @linear-gradient(90deg, transparent 0%, #7C3AED 18%, #00F0FF 50%, #10B981 82%, transparent 100%);
                 animate x {
-                    duration: 250ms;
-                    easing: ease-out;
+                    duration: 380ms;
+                    easing: ease-in-out;
                 }
                 animate width {
-                    duration: 250ms;
-                    easing: ease-out;
+                    duration: 380ms;
+                    easing: ease-in-out;
                 }
                 animate height {
-                    duration: 220ms;
-                    easing: ease-out;
+                    duration: 350ms;
+                    easing: ease-in-out;
                 }
                 animate border-radius {
-                    duration: 220ms;
-                    easing: ease-out;
+                    duration: 350ms;
+                    easing: ease-in-out;
                 }
                 animate opacity {
-                    duration: 180ms;
-                    easing: ease-out;
+                    duration: 320ms;
+                    easing: ease-in-out;
                 }
 
                 // Bright center bead that concentrates energy into the core
                 Rectangle {
-                    width: root.stealth ? 36px : 6px;
-                    height: root.stealth ? 1.5px : 6px;
+                    width: root.stealth ? 36px : 8px;
+                    height: root.stealth ? 1.5px : 8px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    border-radius: root.stealth ? 0.75px : 3px;
+                    border-radius: root.stealth ? 0.75px : 4px;
                     background: #FFFFFF;
                     opacity: root.stealth ? 0.95 : 0.0;
                     animate width {
-                        duration: 200ms;
-                        easing: ease-out;
+                        duration: 340ms;
+                        easing: ease-in-out;
+                    }
+                    animate height {
+                        duration: 320ms;
+                        easing: ease-in-out;
                     }
                     animate opacity {
-                        duration: 160ms;
-                        easing: ease-out;
+                        duration: 300ms;
+                        easing: ease-in-out;
                     }
                 }
             }
 
-            // 2. Compact Pill: Left Mascot (reconstituted from the streak line)
+            // 2. Compact Pill: Left Mascot (reconstituted from the streak line, enlarged to 26px)
             Rectangle {
-                x: 14px;
-                y: (parent.height - 22px) / 2;
-                width: 22px;
-                height: 22px;
+                x: 12px;
+                y: (parent.height - self.height) / 2;
+                width: root.stealth ? 10px : 26px;
+                height: self.width;
                 background: transparent;
                 opacity: root.stealth ? 0.0 : 1.0;
-                animate opacity {
-                    duration: 220ms;
+                animate width {
+                    duration: 380ms;
                     easing: ease-out;
+                }
+                animate opacity {
+                    duration: 350ms;
+                    easing: ease-in-out;
                 }
 
                 // Ambient glow around the mascot
                 Rectangle {
-                    width: 30px;
-                    height: 30px;
+                    width: 38px;
+                    height: 38px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    border-radius: 15px;
-                    background: @radial-gradient(circle, #00F0FF44 0%, #7C3AED22 50%, transparent 80%);
+                    border-radius: 19px;
+                    background: @radial-gradient(circle, #00F0FF4D 0%, #7C3AED26 52%, transparent 80%);
                     opacity: root.aura-opacity;
                 }
 
                 // Rotating plasma corona core
                 Image {
                     source: root.corona;
-                    width: 22px;
-                    height: 22px;
+                    width: parent.width;
+                    height: parent.height;
                     x: 0;
                     y: 0;
                     transform-rotation: root.corona-angle;
-                    opacity: 0.88;
+                    opacity: 0.92;
                     image-fit: contain;
                 }
 
                 // Mascot face avatar with gentle cursor ferrofluid pull
                 Image {
                     source: root.mascot;
-                    width: 18px;
-                    height: 18px;
-                    x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.3;
-                    y: (parent.height - self.height) / 2 + root.orb-offset-y * 0.3;
+                    width: parent.width * 0.82;
+                    height: self.width;
+                    x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.25;
+                    y: (parent.height - self.height) / 2 + root.orb-offset-y * 0.25;
                     opacity: 1.0;
                     image-fit: contain;
                 }
@@ -329,8 +337,8 @@ export component AppWindow inherits Window {
                 vertical-alignment: center;
                 opacity: root.stealth ? 0.0 : 1.0;
                 animate opacity {
-                    duration: 200ms;
-                    easing: ease-out;
+                    duration: 350ms;
+                    easing: ease-in-out;
                 }
             }
 
@@ -343,8 +351,8 @@ export component AppWindow inherits Window {
                 background: transparent;
                 opacity: root.stealth ? 0.0 : 1.0;
                 animate opacity {
-                    duration: 200ms;
-                    easing: ease-out;
+                    duration: 350ms;
+                    easing: ease-in-out;
                 }
 
                 Rectangle {
