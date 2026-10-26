@@ -96,15 +96,14 @@ export component AppWindow inherits Window {
     callback lyrics-toggle();
 
     // --- Design tokens ------------------------------------------------------
-    private property <length> ear-radius: root.stealth ? 4px : 12px;
     private property <length> bottom-radius: root.stealth ? 2.5px : 18px;
     private property <int> page-count: 5;
     private property <length> ring-size: 18px;
     private property <length> wave-bar-width: 2.5px;
 
-    // 1. Silhouette: top-attached notch with inverse concave ear fillets and
-    //    G1-smooth bottom corners. Coordinates follow the animated notch rect,
-    //    so the outline never lags behind the content during a morph.
+    // 1. Silhouette: clean top-attached notch with smooth bottom rounded corners.
+    //    Coordinates follow the animated notch rect directly, eliminating the
+    //    protruding "ears" (double curves) for a sleek, modern outline.
     Path {
         width: root.width;
         height: root.height;
@@ -115,19 +114,12 @@ export component AppWindow inherits Window {
         fill: #000000;
 
         MoveTo {
-            x: (notch.x - root.ear-radius) / 1px;
+            x: notch.x / 1px;
             y: 0;
         }
         LineTo {
-            x: (notch.x + notch.width + root.ear-radius) / 1px;
-            y: 0;
-        }
-        ArcTo {
-            radius-x: root.ear-radius / 1px;
-            radius-y: root.ear-radius / 1px;
-            sweep: true;
             x: (notch.x + notch.width) / 1px;
-            y: root.ear-radius / 1px;
+            y: 0;
         }
         LineTo {
             x: (notch.x + notch.width) / 1px;
@@ -153,13 +145,6 @@ export component AppWindow inherits Window {
         }
         LineTo {
             x: notch.x / 1px;
-            y: root.ear-radius / 1px;
-        }
-        ArcTo {
-            radius-x: root.ear-radius / 1px;
-            radius-y: root.ear-radius / 1px;
-            sweep: true;
-            x: (notch.x - root.ear-radius) / 1px;
             y: 0;
         }
         Close {}
