@@ -210,27 +210,36 @@ export component AppWindow inherits Window {
             }
         }
 
-        // --- Idle / Stealth: Plasma Streak and Ionized Plasma Core ---------
+        // --- Collapsed Notch Content (Stealth & Compact Pill) ---------------
         if !root.expanded: Rectangle {
             width: parent.width;
             height: parent.height;
             background: transparent;
-            opacity: root.closed ? 0.0 : 1.0;
-            animate opacity {
-                duration: 140ms;
-                easing: ease-out;
-            }
 
-            // 1. Stealth Mode: Melted Plasma Streak Line
+            // 1. Morphing Plasma Streak Line:
+            // In Stealth: centered 120px line.
+            // On Wake to Compact: condenses, travels to the left (x: 14px), and morphs into the mascot orb!
             Rectangle {
-                width: root.stealth ? 120px : 12px;
-                height: root.stealth ? 2.5px : 4px;
-                x: (parent.width - self.width) / 2;
-                y: (parent.height - self.height) / 2;
-                border-radius: 1.25px;
+                width: root.stealth ? 120px : 22px;
+                height: root.stealth ? 2.5px : 22px;
+                x: root.stealth ? (parent.width - self.width) / 2 : 14px;
+                y: root.stealth ? (parent.height - self.height) / 2 : (parent.height - 22px) / 2;
+                border-radius: root.stealth ? 1.25px : 11px;
                 opacity: root.stealth ? 1.0 : 0.0;
                 background: @linear-gradient(90deg, transparent 0%, #7C3AED 18%, #00F0FF 50%, #10B981 82%, transparent 100%);
+                animate x {
+                    duration: 250ms;
+                    easing: ease-out;
+                }
                 animate width {
+                    duration: 250ms;
+                    easing: ease-out;
+                }
+                animate height {
+                    duration: 220ms;
+                    easing: ease-out;
+                }
+                animate border-radius {
                     duration: 220ms;
                     easing: ease-out;
                 }
@@ -239,13 +248,13 @@ export component AppWindow inherits Window {
                     easing: ease-out;
                 }
 
-                // Bright center bead that concentrates energy
+                // Bright center bead that concentrates energy into the core
                 Rectangle {
                     width: root.stealth ? 36px : 6px;
-                    height: 1.5px;
+                    height: root.stealth ? 1.5px : 6px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    border-radius: 0.75px;
+                    border-radius: root.stealth ? 0.75px : 3px;
                     background: #FFFFFF;
                     opacity: root.stealth ? 0.95 : 0.0;
                     animate width {
@@ -259,10 +268,12 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // 2. Awake Mode: Reconstituted Ionized Plasma Core
+            // 2. Compact Pill: Left Mascot (reconstituted from the streak line)
             Rectangle {
-                width: parent.width;
-                height: parent.height;
+                x: 14px;
+                y: (parent.height - 22px) / 2;
+                width: 22px;
+                height: 22px;
                 background: transparent;
                 opacity: root.stealth ? 0.0 : 1.0;
                 animate opacity {
@@ -270,212 +281,42 @@ export component AppWindow inherits Window {
                     easing: ease-out;
                 }
 
-                Image {
-                    source: root.aura;
-                    width: 104px * root.aura-scale * (root.stealth ? 0.15 : 1.0);
-                    height: self.width;
-                    x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.55;
-                    y: (parent.height - self.height) / 2 + 2px + root.orb-offset-y * 0.55;
-                    opacity: root.stealth ? 0.0 : root.aura-opacity;
-                    image-fit: contain;
-                    animate width {
-                        duration: 260ms;
-                        easing: ease-out;
-                    }
-                    animate opacity {
-                        duration: 200ms;
-                        easing: ease-out;
-                    }
+                // Ambient glow around the mascot
+                Rectangle {
+                    width: 30px;
+                    height: 30px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 15px;
+                    background: @radial-gradient(circle, #00F0FF44 0%, #7C3AED22 50%, transparent 80%);
+                    opacity: root.aura-opacity;
                 }
 
+                // Rotating plasma corona core
                 Image {
                     source: root.corona;
-                    width: 64px * (root.stealth ? 0.2 : 1.0);
-                    height: self.width;
-                    x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.85;
-                    y: (parent.height - self.height) / 2 + 1px + root.orb-offset-y * 0.85;
+                    width: 22px;
+                    height: 22px;
+                    x: 0;
+                    y: 0;
                     transform-rotation: root.corona-angle;
-                    opacity: root.stealth ? 0.0 : 0.88;
+                    opacity: 0.88;
                     image-fit: contain;
-                    animate width {
-                        duration: 240ms;
-                        easing: ease-out;
-                    }
-                    animate opacity {
-                        duration: 180ms;
-                        easing: ease-out;
-                    }
                 }
 
+                // Mascot face avatar with gentle cursor ferrofluid pull
                 Image {
                     source: root.mascot;
-                    width: 44px * root.orb-scale * (root.stealth ? 0.2 : 1.0);
-                    height: self.width;
-                    x: (parent.width - self.width) / 2 + root.orb-offset-x;
-                    y: (parent.height - self.height) / 2 + 1px + root.orb-offset-y;
-                    opacity: root.stealth ? 0.0 : 1.0;
+                    width: 18px;
+                    height: 18px;
+                    x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.3;
+                    y: (parent.height - self.height) / 2 + root.orb-offset-y * 0.3;
+                    opacity: 1.0;
                     image-fit: contain;
-                    animate width {
-                        duration: 220ms;
-                        easing: ease-out;
-                    }
-                    animate opacity {
-                        duration: 180ms;
-                        easing: ease-out;
-                    }
-                }
-            }
-        }
-
-        // --- Closed: battery ring, clock and live wave ----------------------
-        if !root.expanded: Rectangle {
-            width: parent.width;
-            height: parent.height;
-            background: transparent;
-            opacity: root.closed ? 1.0 : 0.0;
-            animate opacity {
-                duration: 140ms;
-                easing: ease-out;
-            }
-
-            // Left: 18 px battery ring over a dark emerald track.
-            Rectangle {
-                x: 13px;
-                y: (parent.height - root.ring-size) / 2;
-                width: root.ring-size;
-                height: root.ring-size;
-                background: transparent;
-
-                Path {
-                    width: parent.width;
-                    height: parent.height;
-                    viewbox-x: 0;
-                    viewbox-y: 0;
-                    viewbox-width: 18;
-                    viewbox-height: 18;
-                    fill: transparent;
-                    stroke: #064E3B;
-                    stroke-width: 2.5px;
-                    stroke-line-cap: round;
-                    MoveTo {
-                        x: 9;
-                        y: 1.25;
-                    }
-                    ArcTo {
-                        radius-x: 7.75;
-                        radius-y: 7.75;
-                        large-arc: false;
-                        sweep: true;
-                        x: 9;
-                        y: 16.75;
-                    }
-                    ArcTo {
-                        radius-x: 7.75;
-                        radius-y: 7.75;
-                        large-arc: false;
-                        sweep: true;
-                        x: 9;
-                        y: 1.25;
-                    }
-                }
-
-                if root.battery-full: Path {
-                    width: parent.width;
-                    height: parent.height;
-                    viewbox-x: 0;
-                    viewbox-y: 0;
-                    viewbox-width: 18;
-                    viewbox-height: 18;
-                    fill: transparent;
-                    stroke: root.battery-charging ? #34D399 : #22C55E;
-                    stroke-width: 2.5px;
-                    stroke-line-cap: round;
-                    MoveTo {
-                        x: 9;
-                        y: 1.25;
-                    }
-                    ArcTo {
-                        radius-x: 7.75;
-                        radius-y: 7.75;
-                        large-arc: false;
-                        sweep: true;
-                        x: 9;
-                        y: 16.75;
-                    }
-                    ArcTo {
-                        radius-x: 7.75;
-                        radius-y: 7.75;
-                        large-arc: false;
-                        sweep: true;
-                        x: 9;
-                        y: 1.25;
-                    }
-                }
-
-                if root.battery-arc-visible && !root.battery-full: Path {
-                    width: parent.width;
-                    height: parent.height;
-                    viewbox-x: 0;
-                    viewbox-y: 0;
-                    viewbox-width: 18;
-                    viewbox-height: 18;
-                    fill: transparent;
-                    stroke: root.battery-charging ? #34D399 : #22C55E;
-                    stroke-width: 2.5px;
-                    stroke-line-cap: round;
-                    MoveTo {
-                        x: 9;
-                        y: 1.25;
-                    }
-                    ArcTo {
-                        radius-x: 7.75;
-                        radius-y: 7.75;
-                        large-arc: root.battery-arc-large;
-                        sweep: true;
-                        x: root.battery-arc-x;
-                        y: root.battery-arc-y;
-                    }
-                }
-
-                // Charging bolt, or an AC bolt on desktops without a battery.
-                if root.battery-charging || (!root.battery-present && root.battery-on-ac): Path {
-                    width: parent.width;
-                    height: parent.height;
-                    viewbox-x: 0;
-                    viewbox-y: 0;
-                    viewbox-width: 18;
-                    viewbox-height: 18;
-                    fill: root.battery-present ? #34D399 : #00F0FF;
-                    stroke: transparent;
-                    MoveTo {
-                        x: 10.1;
-                        y: 4.4;
-                    }
-                    LineTo {
-                        x: 6.7;
-                        y: 9.7;
-                    }
-                    LineTo {
-                        x: 8.9;
-                        y: 9.7;
-                    }
-                    LineTo {
-                        x: 7.9;
-                        y: 13.6;
-                    }
-                    LineTo {
-                        x: 11.4;
-                        y: 8.2;
-                    }
-                    LineTo {
-                        x: 9.2;
-                        y: 8.2;
-                    }
-                    Close {}
                 }
             }
 
-            // Centre: 24-hour digital clock.
+            // 3. Compact Pill: Centre 24-hour digital clock
             Text {
                 width: parent.width;
                 height: parent.height;
@@ -486,15 +327,25 @@ export component AppWindow inherits Window {
                 letter-spacing: 0.3px;
                 horizontal-alignment: center;
                 vertical-alignment: center;
+                opacity: root.stealth ? 0.0 : 1.0;
+                animate opacity {
+                    duration: 200ms;
+                    easing: ease-out;
+                }
             }
 
-            // Right: five pill bars driven by the live audio peak.
+            // 4. Compact Pill: Right 5 pill bars driven by live audio spectrum
             Rectangle {
                 x: parent.width - 40px;
                 y: 0;
                 width: 24px;
                 height: parent.height;
                 background: transparent;
+                opacity: root.stealth ? 0.0 : 1.0;
+                animate opacity {
+                    duration: 200ms;
+                    easing: ease-out;
+                }
 
                 Rectangle {
                     x: 0px;

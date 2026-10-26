@@ -255,8 +255,7 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
             morph.pending_collapse = None;
             app.set_stealth(stealth);
             app.set_expanded(false);
-            let show_closed = matches!(mode, NotchMode::Closed)
-                || (matches!(mode, NotchMode::CompactHovered) && MEDIA_ACTIVE.with(Cell::get));
+            let show_closed = matches!(mode, NotchMode::Closed | NotchMode::CompactHovered);
             app.set_closed(show_closed);
         }
     });
@@ -422,9 +421,7 @@ fn install_runtime(
                     morph.pending_collapse = None;
                     app.set_expanded(false);
                     app.set_stealth(matches!(mode, NotchMode::Stealth));
-                    let show_closed = matches!(mode, NotchMode::Closed)
-                        || (matches!(mode, NotchMode::CompactHovered)
-                            && MEDIA_ACTIVE.with(Cell::get));
+                    let show_closed = matches!(mode, NotchMode::Closed | NotchMode::CompactHovered);
                     app.set_closed(show_closed);
                 }
             }
