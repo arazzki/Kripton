@@ -38,8 +38,7 @@ use crate::{
     AppWindow,
 };
 
-const HOVER_OPEN_DELAY: Duration = Duration::from_millis(150);
-const HOVER_CLOSE_DELAY: Duration = Duration::from_millis(250);
+const HOVER_CLOSE_DELAY: Duration = Duration::from_millis(350);
 const HOVER_POLL_INTERVAL: Duration = Duration::from_millis(16);
 pub const HIT_MARGIN: f32 = 12.0;
 pub const WAKE_STRIP_W: f32 = 200.0;
@@ -332,7 +331,6 @@ impl PlaybackClock {
 }
 
 struct Runtime {
-    entered_at: Option<Instant>,
     left_at: Option<Instant>,
     click_through: bool,
     last_tick: Instant,
@@ -362,7 +360,6 @@ fn install_runtime(
 ) {
     let weak = app.as_weak();
     let runtime = Rc::new(RefCell::new(Runtime {
-        entered_at: None,
         left_at: None,
         click_through: true,
         last_tick: Instant::now(),
@@ -445,26 +442,15 @@ fn install_runtime(
         if inside {
             runtime.left_at = None;
             if HOVER_LOCKED_UNTIL_LEAVE.with(Cell::get) {
-                runtime.entered_at = None;
+                // User explicitly clicked to collapse; stay in compact mode until pointer leaves.
             } else if !app.get_expanded() {
-                let entered = *runtime.entered_at.get_or_insert(now);
-                if now.duration_since(entered) >= HOVER_OPEN_DELAY {
-                    let mode = if app.get_active_page() == 0 && app.get_lyrics_enabled() {
-                        NotchMode::Lyrics
-                    } else {
-                        NotchMode::Expanded
-                    };
-                    apply_mode(&app, mode);
-                    runtime.entered_at = None;
-                } else {
-                    apply_mode(&app, NotchMode::CompactHovered);
-                }
-            } else {
-                runtime.entered_at = None;
+                // When cursor enters the domain (e.g. wakes from Stealth or hovers Closed bar),
+                // wake up to Compact Pill mode (360x36 hovered).
+                // DO NOT auto-expand to 580x192 HUD! Expansion happens only on user click.
+                apply_mode(&app, NotchMode::CompactHovered);
             }
         } else {
             HOVER_LOCKED_UNTIL_LEAVE.with(|locked| locked.set(false));
-            runtime.entered_at = None;
 
             if app.get_expanded() {
                 let left = *runtime.left_at.get_or_insert(now);
