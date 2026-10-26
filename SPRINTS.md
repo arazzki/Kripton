@@ -7,7 +7,7 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 | 0 | Foundation | Shell native, state, geometri notch, transparansi, hover | ✅ Selesai |
 | 1 | Idle + Closed | Plasma core hidup, closed bar, spring physics | ✅ Selesai |
 | 2 | Music | WinRT SMTC, transport, seek, live wave WASAPI | ✅ Selesai |
-| 3 | Lyrics | LRCLIB, lirik sinkron, mode lebar 560 px | ✅ Selesai |
+| 3 | Lyrics | LRCLIB, lirik sinkron, mode lebar 580 px | ✅ Selesai |
 | 4 | Shelf | Drag & drop OLE, carousel, preview file | ⏳ Berikutnya |
 | 5 | Productivity | Focus timer, Water, To-do | ⏳ |
 | 6 | HUD + Release | Headphone/charging HUD, tray, autostart, installer | ⏳ |
@@ -46,11 +46,11 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 
 1. **Plasma core tiga lapis** — `plasma_core.png` (inti), `plasma_corona.png` (cincin berputar 9°/s), `plasma_aura.png` (halo violet). Breathing 0.25 Hz dengan fase aura tertinggal 0.55 rad agar terasa cair, bukan tiga gambar yang berdenyut serempak.
 2. **Ferrofluid pull** — `Δp = u · Lmax(1 − e^(−d/λ))` dengan `Lmax = 4.2 px`, `λ = 140 px`, fade halus di tepi 320 px. Posisi orb mengikuti kursor dengan exponential smoothing, tidak pernah keluar dari notch.
-3. **Closed mode** — notch 210 × 38 px: battery ring 18 px (`#34D399`/`#22C55E` di atas `#064E3B`), jam 24-jam 15 px bold, 5 pill bar 2.5 px. Desktop tanpa baterai menampilkan ikon AC.
+3. **Closed mode** — notch 336 × 34 px (Compact Pill): battery ring 18 px (`#34D399`/`#22C55E` di atas `#064E3B`), jam 24-jam 15 px bold, 5 pill bar 2.5 px. Desktop tanpa baterai menampilkan ikon AC.
 4. **Battery reader** — `GetSystemPowerStatus`, polling 30 detik, arc dihitung di Rust (`battery_arc`) supaya geometri bisa diuji tanpa Win32.
 5. **Spring** — `src/spring.rs`: semi-implicit Euler, `ζ = 0.72`, `ω = 17 rad/s`, settle < 400 ms, mendukung retarget mid-flight. Menggantikan `cubic-bezier` di Slint.
 6. **Idle/Closed switching** — `IAudioMeterInformation::GetPeakValue` pada default render endpoint, hysteresis 0,25 detik aktif / 1,6 detik hening. Ambang 0,03 (≈ −30 dBFS) karena endpoint nyata punya noise floor sampai ~0,017. Mode tidak dipersistensi: setiap start selalu Idle sampai audio benar-benar terdeteksi.
-7. **Runtime loop** — timer 16 ms untuk spring + hover; properti maskot diperbarui ~20 fps; sampling audio ~10 Hz. Shell expanded memakai layout tetap 460 × 175 px yang di-clip oleh notch agar teks tidak reflow saat morph.
+7. **Runtime loop** — timer 16 ms untuk spring + hover; properti maskot diperbarui ~20 fps; sampling audio ~10 Hz. Shell expanded memakai layout tetap 580 × 192 px yang di-clip oleh notch agar teks tidak reflow saat morph.
 8. **COM STA** diinisialisasi di `main.rs` sebagai persiapan SMTC (Sprint 2) dan OLE drag/drop (Sprint 4).
 
 **Acceptance terverifikasi:**
@@ -116,7 +116,7 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 1. **Integrasi LRCLIB & HTTP Client Native** — `src/lyrics.rs`: integrasi Windows native WinRT `HttpClient` (`Web_Http`), query `/api/get` (judul, artis, durasi) dengan fallback `/api/search?q=`, worker thread background tanpa memblokir thread UI.
 2. **Parser LRC & Time-Sync Engine** — parsing timestamp presisi `[mm:ss.xx]` dan `[mm:ss.xxx]`, binary search window waktu lirik, auto-scroll 3 baris (baris sebelumnya, baris aktif, baris berikutnya).
 3. **Cache In-Memory & Disk** — cache RAM (`HashMap`) dan cache lokal persisten JSON di folder `%APPDATA%/Kripton/lyrics_cache/`, deduplikasi request in-flight agar tidak ada query ganda untuk track yang sama.
-4. **Layout Widened Split-View (560 × 165 px)** — mode `NotchMode::Lyrics` memanjang dari 460 px ke 560 px:
+4. **Layout Widened Split-View (580 × 192 px)** — mode `NotchMode::Lyrics` (580 × 192 px per DIMENSIONS.md):
    - Kolom kiri: compact player (album art 56 px, judul, artis, slider progress, tombol kontrol media).
    - Divider: garis vertikal 1 px `#FFFFFF1F`.
    - Kolom kanan: viewport lirik tersinkron (baris aktif putih terang 15 px bold dengan visual bullet marker, baris lain `#64748B` 13 px semibold, fallback gracefully saat offline/lirik tidak tersedia).
@@ -128,7 +128,7 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 - Parser LRC dan window sinkronisasi diverifikasi via 4 unit test (`test_parse_lrc_standard`, `test_parse_lrc_multi_timestamp`, `test_current_window`, `test_url_encode`).
 - 29 unit test di seluruh proyek lulus 100% (`cargo test`).
 - Bebas error dan peringatan (`cargo clippy` & `cargo fmt` bersih).
-- Notch 560 px pas berada di tengah kanvas 600 px tanpa terpotong.
+- Notch 580 px pas berada di tengah kanvas 680 px tanpa terpotong (sensor 604 × 204 px).
 
 ---
 

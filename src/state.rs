@@ -67,9 +67,11 @@ impl Page {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Closed/Lyrics/Hud are wired in later sprints.
+#[allow(dead_code)] // Stealth/CompactHovered/Hud are wired as needed.
 pub enum NotchMode {
+    Stealth,
     Idle,
+    CompactHovered,
     Closed,
     Expanded,
     Lyrics,
@@ -79,11 +81,13 @@ pub enum NotchMode {
 impl NotchMode {
     pub fn size(self) -> (f32, f32) {
         match self {
-            NotchMode::Idle => (190.0, 38.0),
-            NotchMode::Closed => (210.0, 38.0),
-            NotchMode::Expanded => (460.0, 175.0),
-            NotchMode::Lyrics => (560.0, 165.0),
-            NotchMode::Hud => (320.0, 64.0),
+            NotchMode::Stealth => (184.0, 5.0),
+            NotchMode::Idle => (336.0, 34.0),
+            NotchMode::CompactHovered => (360.0, 36.0),
+            NotchMode::Closed => (336.0, 34.0),
+            NotchMode::Expanded => (580.0, 192.0),
+            NotchMode::Lyrics => (580.0, 192.0),
+            NotchMode::Hud => (580.0, 192.0),
         }
     }
 }
@@ -308,10 +312,11 @@ mod tests {
 
     #[test]
     fn notch_sizes_match_spec() {
-        assert_eq!(NotchMode::Idle.size(), (190.0, 38.0));
-        assert_eq!(NotchMode::Closed.size(), (210.0, 38.0));
-        assert_eq!(NotchMode::Expanded.size(), (460.0, 175.0));
-        assert_eq!(NotchMode::Lyrics.size(), (560.0, 165.0));
-        assert_eq!(NotchMode::Hud.size(), (320.0, 64.0));
+        assert_eq!(NotchMode::Stealth.size(), (184.0, 5.0));
+        assert_eq!(NotchMode::Idle.size(), (336.0, 34.0));
+        assert_eq!(NotchMode::CompactHovered.size(), (360.0, 36.0));
+        assert_eq!(NotchMode::Closed.size(), (336.0, 34.0));
+        assert_eq!(NotchMode::Expanded.size(), (580.0, 192.0));
+        assert_eq!(NotchMode::Lyrics.size(), (580.0, 192.0));
     }
 }

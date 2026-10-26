@@ -85,19 +85,19 @@ mod tests {
 
     #[test]
     fn spring_settles_on_target() {
-        let mut spring = Spring::new(190.0);
-        spring.set_target(460.0);
+        let mut spring = Spring::new(336.0);
+        spring.set_target(580.0);
         run(&mut spring, 1.5);
-        assert!((spring.value() - 460.0).abs() < 0.01);
-        assert_eq!(spring.target, 460.0);
+        assert!((spring.value() - 580.0).abs() < 0.01);
+        assert_eq!(spring.target, 580.0);
     }
 
     #[test]
     fn spring_overshoots_softly() {
-        let mut spring = Spring::new(190.0);
-        spring.set_target(460.0);
+        let mut spring = Spring::new(336.0);
+        spring.set_target(580.0);
         let peak = run(&mut spring, 1.5);
-        let overshoot = (peak - 460.0) / 270.0;
+        let overshoot = (peak - 580.0) / (580.0 - 336.0);
         assert!(
             overshoot > 0.005,
             "expected a visible bounce, got {overshoot}"
@@ -107,11 +107,11 @@ mod tests {
 
     #[test]
     fn spring_retargets_mid_flight() {
-        let mut spring = Spring::new(190.0);
-        spring.set_target(460.0);
+        let mut spring = Spring::new(336.0);
+        spring.set_target(580.0);
         run(&mut spring, 0.12);
-        spring.set_target(190.0);
+        spring.set_target(336.0);
         run(&mut spring, 1.5);
-        assert!((spring.value() - 190.0).abs() < 0.01);
+        assert!((spring.value() - 336.0).abs() < 0.01);
     }
 }

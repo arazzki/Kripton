@@ -171,7 +171,7 @@ Aplikasi **Kripton** memiliki 10 mode operasional yang bekerja secara sinergis, 
 > *"When nothing is happening, the clock rests and the Plasma Core comes out."*
 
 * **Kondisi Pemicu:** Aktif secara otomatis ketika tidak ada media/musik yang sedang diputar, tidak ada *timer* berjalan, dan kursor berada di luar area *notch*.
-* **Dimensi Notch:** $190\text{ px} \times 38\text{ px}$ (termasuk telinga lengkung atas).
+* **Dimensi Notch:** $336\text{ px} \times 34\text{ px}$ (Compact Pill sesuai [`DIMENSIONS.md`](DIMENSIONS.md); saat kursor hover melebar halus ke $360\text{ px} \times 36\text{ px}$).
 * **Desain Visual:**
   * Latar belakang hitam pekat (`#000000`).
   * **Bottom Ambient Glow:** Pendaran cahaya gradasi radial lembut di sepanjang tepi bawah bagian dalam *notch* dengan perpaduan warna biru-ungu elektrik (`#4F46E5` $\rightarrow$ `#7C3AED`) dan bias sian tipis (`#00F0FF`).
@@ -189,7 +189,7 @@ Aplikasi **Kripton** memiliki 10 mode operasional yang bekerja secara sinergis, 
 > *"Closed: battery, time and a live sound wave while music plays."*
 
 * **Kondisi Pemicu:** Aktif ketika ada musik yang sedang diputar di PC (atau *timer* aktif di latar belakang) namun kursor pengguna tidak sedang melakukan *hover* di atas *notch*.
-* **Dimensi Notch:** $210\text{ px} \times 38\text{ px}$.
+* **Dimensi Notch:** $336\text{ px} \times 34\text{ px}$ (Compact Pill sesuai [`DIMENSIONS.md`](DIMENSIONS.md)).
 * **Tata Letak Internal (3 Elemen Horizontal):**
   1. **Sisi Kiri — Battery Ring:** Cincin progres melingkar (*circular progress arc*) berukuran $18\text{ px} \times 18\text{ px}$ berwarna hijau neon (`#34D399` / `#22C55E`) di atas jalur lingkaran hijau gelap (`#064E3B`). Panjang busur merepresentasikan persentase baterai saat ini ($0\% - 100\%$).
   2. **Sisi Tengah — Digital Clock:** Teks jam digital format 24-jam (`09:47`) dengan font *sans-serif* tebal (`Inter` / `Segoe UI Variable Display Bold`, ukuran $15\text{ px}$, warna `#FFFFFF`).
@@ -201,7 +201,7 @@ Aplikasi **Kripton** memiliki 10 mode operasional yang bekerja secara sinergis, 
 > *"Hover to open. Controls for whatever is playing on your PC."*
 
 * **Kondisi Pemicu:** Terbuka secara otomatis dengan animasi *spring* saat kursor melakukan **hover** ke area *notch* (ketika halaman aktif adalah Musik atau saat musik sedang berputar).
-* **Dimensi Notch:** $460\text{ px} \times 175\text{ px}$.
+* **Dimensi Notch:** $580\text{ px} \times 192\text{ px}$ (Expanded HUD sesuai [`DIMENSIONS.md`](DIMENSIONS.md)).
 * **Tata Letak Internal:**
   1. **Top Status Header (Kanan Atas Area Info):**
      * Cincin baterai hijau ($16\text{ px}$).
@@ -227,7 +227,7 @@ Aplikasi **Kripton** memiliki 10 mode operasional yang bekerja secara sinergis, 
 > *"Lyrics mode: the notch widens and lights each line as it's sung."*
 
 * **Kondisi Pemicu:** Aktif ketika pengguna mengklik tombol *toggle* lirik (ikon balon percakapan) pada Mode Musik.
-* **Dimensi Notch:** Melebar secara horizontal menjadi $560\text{ px} \times 165\text{ px}$.
+* **Dimensi Notch:** $580\text{ px} \times 192\text{ px}$ (Expanded HUD dengan tata letak split-view sesuai [`DIMENSIONS.md`](DIMENSIONS.md)).
 * **Desain Visual & Atmosfer:**
   * Latar belakang *notch* menampilkan pendaran gradasi warna biru laut / warna dominan sampul album (`#0F172A` $\rightarrow$ `#1E3A8A` $\rightarrow$ `#2563EB`) di sepanjang bagian bawah *notch*.
   * Tombol ikon balon percakapan berubah menjadi terisi penuh (*solid white fill*) menandakan mode lirik aktif.
@@ -248,7 +248,7 @@ Aplikasi **Kripton** memiliki 10 mode operasional yang bekerja secara sinergis, 
 
 ### 4.5. Mode 5: Timer Fokus (Focus / Pomodoro Timer)
 * **Kondisi Pemicu:** Diakses dengan menggeser halaman (*pagination*) pada *notch* terbuka atau melalui klik cepat.
-* **Dimensi Notch:** $460\text{ px} \times 175\text{ px}$ (saat terbuka).
+* **Dimensi Notch:** $580\text{ px} \times 192\text{ px}$ (Expanded HUD saat terbuka sesuai [`DIMENSIONS.md`](DIMENSIONS.md)).
 * **Fitur & Tata Letak:**
   * **Header Bar:** Identik dengan mode terbuka lainnya (Cincin baterai hijau, Tanggal & Jam lengkap, *Live Sound Wave*).
   * **Preset & Kustomisasi Waktu:** Pilihan cepat durasi fokus ($15\text{ m}$, $25\text{ m}$, $45\text{ m}$, $60\text{ m}$) serta tombol tambah/kurang menit.
@@ -260,7 +260,7 @@ Aplikasi **Kripton** memiliki 10 mode operasional yang bekerja secara sinergis, 
 
 ### 4.6. Mode 6: Water (Hydration Tracker & Reminder)
 * **Kondisi Pemicu:** Diakses melalui navigasi halaman *pagination* di dalam *notch* terbuka, atau muncul otomatis sebagai pengingat berkala setiap $60 - 90\text{ menit}$.
-* **Dimensi Notch:** $460\text{ px} \times 175\text{ px}$.
+* **Dimensi Notch:** $580\text{ px} \times 192\text{ px}$ (Expanded HUD sesuai [`DIMENSIONS.md`](DIMENSIONS.md)).
 * **Fitur & Tata Letak:**
   * **Header Bar:** Cincin baterai hijau, Tanggal & Jam lengkap, *Live Sound Wave*.
   * **Visualisasi Hidrasi:** Indikator progres harian (misal `1,250 / 2,000 ml` atau `5 / 8 Gelas`) dengan animasi gelombang cairan berwarna *icy cyan* (`#00F0FF`).
@@ -276,7 +276,7 @@ Aplikasi **Kripton** memiliki 10 mode operasional yang bekerja secara sinergis, 
   1. Pengguna menyeret (*drag*) file atau folder dari Windows Explorer/Desktop ke arah atas layar (*notch* otomatis membuka halaman `Shelf` saat mendeteksi *OLE DragEnter*).
   2. Pengguna berpindah ke halaman `Shelf` melalui *pagination dots*.
   3. Pengguna mengambil tangkapan layar (`Win + Shift + S`).
-* **Dimensi Notch:** $460\text{ px} \times 175\text{ px}$.
+* **Dimensi Notch:** $580\text{ px} \times 192\text{ px}$ (Expanded HUD sesuai [`DIMENSIONS.md`](DIMENSIONS.md)).
 * **Tata Letak Internal (Sesuai Referensi):**
   1. **Top Header Bar:**
      * **Kiri:** Teks judul tebal `Shelf` ($17\text{ px}$, `#FFFFFF`) berdampingan dengan tombol kapsul `Clear` (`#1F2937`, teks `#9CA3AF`, `border-radius: 12px`) untuk mengosongkan seluruh isi rak.
@@ -295,7 +295,7 @@ Aplikasi **Kripton** memiliki 10 mode operasional yang bekerja secara sinergis, 
 
 ### 4.8. Mode 8: To-do (In-Notch Quick Checklist)
 * **Kondisi Pemicu:** Diakses melalui navigasi halaman *pagination* pada *notch* terbuka.
-* **Dimensi Notch:** $460\text{ px} \times 175\text{ px}$.
+* **Dimensi Notch:** $580\text{ px} \times 192\text{ px}$ (Expanded HUD sesuai [`DIMENSIONS.md`](DIMENSIONS.md)).
 * **Fitur & Tata Letak:**
   * **Header Bar:** Judul `To-do` + penghitung tugas selesai (`2/4`) di kiri, Tanggal & Jam di tengah, serta *Live Sound Wave* di kanan.
   * **Daftar Tugas (Scrollable List):**

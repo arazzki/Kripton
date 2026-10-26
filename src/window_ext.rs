@@ -38,13 +38,15 @@ use crate::{
     AppWindow,
 };
 
-const HOVER_OPEN_DELAY: Duration = Duration::from_millis(60);
+const HOVER_OPEN_DELAY: Duration = Duration::from_millis(150);
 const HOVER_CLOSE_DELAY: Duration = Duration::from_millis(250);
 const HOVER_POLL_INTERVAL: Duration = Duration::from_millis(16);
-const HOVER_PADDING: f32 = 6.0;
+pub const HIT_MARGIN: f32 = 12.0;
+pub const WAKE_STRIP_W: f32 = 200.0;
+pub const WAKE_STRIP_H: f32 = 6.0;
 const LIVING_EVERY: u64 = 3; // Living properties update at ~20 fps.
 const MEDIA_POLL_INTERVAL: Duration = Duration::from_millis(250);
-const COLLAPSE_REVEAL_WIDTH: f32 = 250.0;
+const COLLAPSE_REVEAL_WIDTH: f32 = 380.0;
 
 thread_local! {
     /// Set after the user explicitly collapses the notch with a click. Hover
@@ -175,19 +177,31 @@ impl OverlayWindow {
         }
 
         let scale = app.window().scale_factor();
+        let window_width = (window_rect.right - window_rect.left) as f32;
         let notch_width = app.get_notch_width() * scale;
         let notch_height = app.get_notch_height() * scale;
-        let window_width = (window_rect.right - window_rect.left) as f32;
-        let left = window_rect.left as f32 + (window_width - notch_width) * 0.5;
-        let top = window_rect.top as f32;
-        let padding = HOVER_PADDING * scale;
 
-        let x = cursor.x as f32;
-        let y = cursor.y as f32;
-        x >= left - padding
-            && x <= left + notch_width + padding
-            && y >= top
-            && y <= top + notch_height + padding
+        let x = (cursor.x - window_rect.left) as f32;
+        let y = (cursor.y - window_rect.top) as f32;
+
+        let is_awake = notch_height > (10.0 * scale);
+        let strip_w = WAKE_STRIP_W * scale;
+        let strip_h = WAKE_STRIP_H * scale;
+        let strip_x0 = (window_width - strip_w) * 0.5;
+        let on_wake_strip =
+            x >= strip_x0 && x <= strip_x0 + strip_w && y >= -4.0 * scale && y <= strip_h;
+
+        if is_awake {
+            let hit_margin = HIT_MARGIN * scale;
+            let rect_x = (window_width - notch_width) * 0.5;
+            let on_island = x >= rect_x - hit_margin
+                && x <= rect_x + notch_width + hit_margin
+                && y >= -4.0 * scale
+                && y <= notch_height + hit_margin;
+            on_island || on_wake_strip
+        } else {
+            on_wake_strip
+        }
     }
 
     /// Cursor position relative to the centre of the notch, in logical pixels.
@@ -239,7 +253,9 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
         } else {
             morph.pending_collapse = None;
             app.set_expanded(false);
-            app.set_closed(matches!(mode, NotchMode::Closed));
+            let show_closed = matches!(mode, NotchMode::Closed)
+                || (matches!(mode, NotchMode::CompactHovered) && MEDIA_ACTIVE.with(Cell::get));
+            app.set_closed(show_closed);
         }
     });
 }
@@ -437,6 +453,8 @@ fn install_runtime(
                     };
                     apply_mode(&app, mode);
                     runtime.entered_at = None;
+                } else {
+                    apply_mode(&app, NotchMode::CompactHovered);
                 }
             } else {
                 runtime.entered_at = None;
@@ -452,6 +470,7 @@ fn install_runtime(
                     runtime.left_at = None;
                 }
             } else {
+                apply_mode(&app, collapsed_mode());
                 runtime.left_at = None;
             }
         }

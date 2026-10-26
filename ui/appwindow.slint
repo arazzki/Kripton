@@ -4,8 +4,8 @@
 
 export component AppWindow inherits Window {
     title: "Kripton";
-    width: 600px;
-    height: 220px;
+    width: 680px;
+    height: 250px;
     background: transparent;
     no-frame: true;
 
@@ -13,8 +13,8 @@ export component AppWindow inherits Window {
     default-font-size: 12px;
 
     // --- Driven by Rust -----------------------------------------------------
-    in property <length> notch-width: 190px;
-    in property <length> notch-height: 38px;
+    in property <length> notch-width: 336px;
+    in property <length> notch-height: 34px;
     in property <bool> expanded: false;
     in property <bool> closed: false;
     in property <int> active-page: 0;
@@ -467,8 +467,8 @@ export component AppWindow inherits Window {
         // --- Expanded shell ------------------------------------------------
         // Fixed 460 px (or 560 px in lyrics mode) layout clipped by the springing notch.
         if root.expanded: Rectangle {
-            width: (root.lyrics-enabled && root.active-page == 0) ? 560px : 460px;
-            height: (root.lyrics-enabled && root.active-page == 0) ? 165px : 175px;
+            width: 580px;
+            height: 192px;
             x: (parent.width - self.width) / 2;
             y: 0;
             background: transparent;
@@ -1080,7 +1080,7 @@ export component AppWindow inherits Window {
                     }
 
 
-                    // --- Music page (Widened Synced Lyrics View: 560 x 165) ----
+                    // --- Music page (Widened Synced Lyrics View: 580 x 192) ----
                     if root.active-page == 0 && root.lyrics-enabled: HorizontalLayout {
                         padding-left: 8px;
                         padding-right: 8px;
