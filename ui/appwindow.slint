@@ -218,13 +218,13 @@ export component AppWindow inherits Window {
 
             // 1. Morphing Plasma Streak Line:
             // In Stealth: centered 120px line.
-            // On Wake to Compact: gracefully glides to left (x: 12px), condenses and blossoms into mascot orb!
+            // On Wake to Compact: gracefully glides to left (x: 10px), condenses and blossoms into enlarged 30px mascot orb!
             Rectangle {
-                width: root.stealth ? 120px : 26px;
-                height: root.stealth ? 2.5px : 26px;
-                x: root.stealth ? (parent.width - self.width) / 2 : 12px;
-                y: root.stealth ? (parent.height - self.height) / 2 : (parent.height - 26px) / 2;
-                border-radius: root.stealth ? 1.25px : 13px;
+                width: root.stealth ? 120px : 30px;
+                height: root.stealth ? 2.5px : 30px;
+                x: root.stealth ? (parent.width - self.width) / 2 : 10px;
+                y: root.stealth ? (parent.height - self.height) / 2 : (parent.height - 30px) / 2;
+                border-radius: root.stealth ? 1.25px : 15px;
                 opacity: root.stealth ? 1.0 : 0.0;
                 background: @linear-gradient(90deg, transparent 0%, #7C3AED 18%, #00F0FF 50%, #10B981 82%, transparent 100%);
                 animate x {
@@ -250,11 +250,11 @@ export component AppWindow inherits Window {
 
                 // Bright center bead that concentrates energy into the core
                 Rectangle {
-                    width: root.stealth ? 36px : 8px;
-                    height: root.stealth ? 1.5px : 8px;
+                    width: root.stealth ? 36px : 9px;
+                    height: root.stealth ? 1.5px : 9px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    border-radius: root.stealth ? 0.75px : 4px;
+                    border-radius: root.stealth ? 0.75px : 4.5px;
                     background: #FFFFFF;
                     opacity: root.stealth ? 0.95 : 0.0;
                     animate width {
@@ -272,11 +272,11 @@ export component AppWindow inherits Window {
                 }
             }
 
-            // 2. Compact Pill: Left Mascot (reconstituted from the streak line, enlarged to 26px)
+            // 2. Compact Pill: Left Mascot (reconstituted from the streak line, bold 30px size)
             Rectangle {
-                x: 12px;
+                x: 10px;
                 y: (parent.height - self.height) / 2;
-                width: root.stealth ? 10px : 26px;
+                width: root.stealth ? 10px : 30px;
                 height: self.width;
                 background: transparent;
                 opacity: root.stealth ? 0.0 : 1.0;
@@ -291,12 +291,12 @@ export component AppWindow inherits Window {
 
                 // Ambient glow around the mascot
                 Rectangle {
-                    width: 38px;
-                    height: 38px;
+                    width: 44px;
+                    height: 44px;
                     x: (parent.width - self.width) / 2;
                     y: (parent.height - self.height) / 2;
-                    border-radius: 19px;
-                    background: @radial-gradient(circle, #00F0FF4D 0%, #7C3AED26 52%, transparent 80%);
+                    border-radius: 22px;
+                    background: @radial-gradient(circle, #00F0FF55 0%, #7C3AED2B 52%, transparent 80%);
                     opacity: root.aura-opacity;
                 }
 
@@ -315,7 +315,7 @@ export component AppWindow inherits Window {
                 // Mascot face avatar with gentle cursor ferrofluid pull
                 Image {
                     source: root.mascot;
-                    width: parent.width * 0.82;
+                    width: parent.width * 0.86;
                     height: self.width;
                     x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.25;
                     y: (parent.height - self.height) / 2 + root.orb-offset-y * 0.25;
