@@ -1,65 +1,150 @@
-# 🏝️ Kripton — Native Windows Dynamic Island in Rust
+# Kripton
 
-Kripton adalah aplikasi desktop *living notch / dynamic island* untuk Windows 10 & 11 yang dibangun **100% menggunakan Rust murni dan Slint UI**. Didesain dengan filosofi performa ultra-ringan (**< 35 MB RAM**, **0.0% CPU saat idle**, single native process, tanpa browser/webview).
+**Living notch untuk Windows.** Kripton adalah aplikasi desktop native yang menempel di tepi atas layar, tepat di tengah, dan berubah bentuk seperti *notch* macOS: orb plasma yang bernapas saat idle, kontrol musik, lirik sinkron, timer fokus, pelacak air, rak file, to-do, serta HUD headphone dan baterai.
 
----
+Dibangun **100% dengan Rust + Slint**. Tidak ada Electron, WebView2, browser scraping, Discord RPC, skrip eksternal, atau database eksternal.
 
-## 🚀 Fitur Utama
+> Status: **Sprint 0 — Foundation selesai**. Shell UI, geometri notch, transparansi native, hover, navigasi 5 halaman, dan persistensi state sudah berjalan. Halaman fitur menyusul pada sprint berikutnya (lihat [`SPRINTS.md`](SPRINTS.md)).
 
-1. **Morphing Dynamic Notch (3 Mode Tampilan):**
-   - **Stealth Edge (`180 × 8 px`):** Mode tersembunyi ultra-tipis saat sistem idle.
-   - **Compact Pill (`340 × 38 px`):** Aktif saat lagu berputar, kursor menyentuh wake-strip, atau sistem mengirimkan notifikasi HUD. Menampilkan siluet geometris **K**, cover album mini, visualizer audio, dan jam aktif.
-   - **Expanded HUD (`460 × 156 px`):** Terbuka saat pulau diklik, menyediakan kontrol multimedia lengkap, slider durasi lagu, dan tombol aksi shelf.
+![Kripton — concept art](assets/plasma_core_concept.png)
 
-2. **Universal Media Controller (WinRT SMTC):**
-   - Terhubung secara *event-driven* ke Spotify, Apple Music, YouTube di Chrome/Edge/Brave, VLC, dll.
-   - Kontrol Play / Pause, Next, dan Previous responsif tanpa blocking UI.
-   - Dekode album art cover PNG/JPEG secara native dari stream Windows Runtime.
-
-3. **Procedural Sine-Wave Visualizer:**
-   - 4-bar equalizer ritmis dinamis berbasis osilasi gelombang sinus tanpa beban CPU (otomatis mendatar saat lagu dijeda).
-
-4. **System HUD Sensor (WASAPI & Power):**
-   - **Master Volume HUD:** Mendeteksi perubahan volume master Windows via `IAudioEndpointVolumeCallback` dan memunculkan pill volume interaktif dengan auto-dismiss.
-   - **Battery & Charger Alert:** Mendeteksi status colok/cabut kabel charger (`⚡ Charging` / `🔋 On Battery`) dan peringatan baterai rendah.
-
-5. **Quick Screenshot & File Shelf (`Win + Shift + S`):**
-   - Mendeteksi tangkapan layar baru dari clipboard sequence secara instan.
-   - Otomatis menyimpan file PNG ke direktori `Pictures\Screenshots\Kripton`.
-   - Pratinjau thumbnail langsung di pulau dengan tombol aksi **Buka File (`👁`)**, **Salin Path (`📋`)**, dan **Tutup (`✕`)**.
-
-6. **Windows Taskbar System Tray:**
-   - Ikon tray di taskbar notifikasi Windows (`Shell_NotifyIconW`).
-   - Menu klik kanan: Toggle Island, Buka Screenshots Shelf, About Kripton, dan Keluar.
-   - Klik kiri ikon tray untuk langsung membuka/menutup Dynamic Island.
-   - Bebas dari jendela konsol cmd hitam di latar belakang (`#![windows_subsystem = "windows"]`).
+*Arah visual: notch hitam pekat dengan Ionized Plasma Core. Concept art dibuat secara prosedural dari prompt PRD.*
 
 ---
 
-## 🛠️ Stack Teknologi
+## Tampilan
 
-- **Bahasa:** Rust (Edition 2021)
-- **UI Framework:** Slint v1.18 (GPU Direct Renderer via Direct3D/FemtoVG)
-- **Windows APIs:** Crate `windows` v0.62 (Win32 Core Audio, Power, Shell Tray, Media Control SMTC)
-- **Image Processing:** `image` v0.25 (Fast PNG/JPEG RGBA decoding & thumbnailing)
-- **Clipboard:** `arboard` v3.7 (Native clipboard image extraction)
+| Idle | Expanded |
+| --- | --- |
+| Orb plasma di notch 190 × 38 px | Shell 460 × 175 px dengan header, kartu halaman, dan pagination |
+
+Palet: hitam pekat `#000000`, icy cyan `#00F0FF`, emerald `#10B981`, krypton violet `#7C3AED`, dengan aksen indigo `#4F46E5`.
 
 ---
 
-## 🏃 Cara Menjalankan
+## Fitur yang direncanakan
 
-Jalankan langsung melalui Cargo:
-```bash
+- [x] **Foundation** — window transparan top-center, notch dengan *inverse concave fillets*, hover expand/collapse, state JSON.
+- [ ] **Idle** — plasma core bernapas 0.25 Hz + ferrofluid cursor pull.
+- [ ] **Closed** — battery ring, jam digital, live sound wave 5 batang.
+- [ ] **Music** — WinRT SMTC, album art, transport, seek slider.
+- [ ] **Lyrics** — LRCLIB + lirik tersinkron, melebar 560 px.
+- [ ] **Focus** — Pomodoro in-notch + chime.
+- [ ] **Water** — target harian, gelombang cairan, pengingat.
+- [ ] **Shelf** — drag & drop OLE, carousel file/folder.
+- [ ] **To-do** — checklist cepat, strikethrough.
+- [ ] **HUD** — headphone connect & charging pop-up 3 detik.
+- [ ] **System** — tray icon, autostart, single instance, installer.
+
+---
+
+## Arsitektur
+
+```
+src/
+├── main.rs           # bootstrap Slint, timer jam, wiring callback
+├── state.rs          # Page/NotchMode, state.json atomik, normalisasi harian
+└── window_ext.rs     # Win32 overlay: topmost, toolwindow, click-through, hover
+
+ui/
+└── appwindow.slint   # shell notch, silhouette Path, idle + expanded
+
+assets/
+├── icon.ico          # ikon executable
+├── plasma_core.png   # maskot Ionized Plasma Core
+└── chime.wav         # chime timer fokus
+
+tools/
+└── generate_assets.py  # generator aset prosedural (Pillow + NumPy)
+```
+
+**Prinsip geometri**
+
+- Kanvas native selalu **600 × 220 px** dan transparan; notch dianimasikan di dalamnya sehingga shadow/overshoot tidak terpotong.
+- Siluet notch digambar sebagai satu `Path` dinamis: telinga cekung 12 px di kiri/kanan atas, sudut bawah membulat 18 px.
+- Transisi ukuran memakai kurva *slightly underdamped* `cubic-bezier(0.34, 1.22, 0.64, 1)` untuk membal halus khas Apple.
+- Window memakai `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`, selalu topmost, dan `WS_EX_TRANSPARENT` saat kursor di luar notch agar klik menembus ke aplikasi di bawahnya.
+
+> Renderer: **FemtoVG**. Renderer Skia/Direct3D milik Slint saat ini merender area transparan sebagai hitam di Windows, sehingga FemtoVG dipakai untuk alpha yang benar.
+
+---
+
+## Kebutuhan
+
+- Windows 10 22H2 atau Windows 11
+- Rust **1.92+** dengan toolchain MSVC (`x86_64-pc-windows-msvc`)
+- Visual Studio Build Tools (Windows SDK + C++ workload)
+- Python 3.10+ (hanya jika ingin membuat ulang aset)
+
+## Build & jalankan
+
+```powershell
+cargo build
 cargo run
 ```
 
-Atau jalankan file executable hasil kompilasi:
-```bash
-.\target\debug\kripton.exe
+Build pertama mengompilasi Slint dan cukup berat. Jika RAM terbatas, batasi paralelisme:
+
+```powershell
+cargo build -j 1
 ```
 
----
+Build rilis:
 
-## 📋 Dokumentasi Spesifikasi Lengkap
+```powershell
+cargo build --release
+# hasil: target\release\kripton.exe
+```
 
-Lihat file [PRD.md](./PRD.md) untuk detail arsitektur teknis dan status penyelesaian roadmap seluruh milestone (Sprint 1 s.d. Sprint 5 Selesai ✅).
+## Kontrol (Sprint 0)
+
+| Aksi | Hasil |
+| --- | --- |
+| Arahkan kursor ke notch (60 ms) | Notch membesar ke 460 × 175 px |
+| Jauhkan kursor (250 ms) | Notch mengecil kembali |
+| Klik notch | Toggle expand/collapse |
+| Klik titik pagination | Pindah halaman (Music/Focus/Water/Shelf/To-do) |
+| Klik kanan notch | Keluar dari aplikasi (sementara, sampai tray hadir) |
+| Klik di luar notch | Diteruskan ke aplikasi di bawahnya (click-through) |
+
+Hanya satu instance yang boleh berjalan; instance kedua langsung keluar.
+
+## Data & privasi
+
+State disimpan di:
+
+```
+%APPDATA%\Kripton\state.json
+```
+
+Log ringan (rotasi manual, tanpa telemetri):
+
+```
+%APPDATA%\Kripton\kripton.log
+```
+
+State ditulis lewat file sementara lalu `rename`, dan state korup dikarantina menjadi `state.corrupt-YYYYMMDD-HHMMSS.json`. Tidak ada data yang dikirim ke mana pun pada Sprint 0. Nanti, lirik hanya memanggil LRCLIB secara langsung saat mode Lyrics aktif; tidak ada analytics.
+
+## Aset
+
+Semua aset dibuat secara prosedural dari arah seni PRD:
+
+```powershell
+python tools/generate_assets.py
+```
+
+Menghasilkan `plasma_core.png`, `icon.ico`, `icon.png`, `plasma_core_concept.png`, dan `chime.wav`.
+
+## Kualitas kode
+
+```powershell
+cargo fmt --all
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+CI Windows berjalan untuk fmt, clippy, dan test pada setiap push (`.github/workflows/ci.yml`).
+
+## Lisensi
+
+MIT © 2026 Kripton. Lihat [`LICENSE`](LICENSE).

@@ -1,743 +1,333 @@
-// Elegant Geometric Monogram Silhouette "K" (Kripton)
-component GeometricK inherits Rectangle {
-    in-out property <length> size: 24px;
-    in-out property <color> spine_color: #FFFFFF;
-    in-out property <color> blade_top_color: #00F2FE;
-    in-out property <color> blade_bottom_color: #00C6FF;
-    in-out property <color> badge_bg: #0C0C0E;
-    in-out property <color> badge_border: #27272A;
-
-    width: root.size;
-    height: root.size;
-    border-radius: root.size / 2;
-    background: root.badge_bg;
-    border-width: 1px;
-    border-color: root.badge_border;
-    clip: true;
-
-    // Left Vertical Spine (Monolith Pillar)
-    Rectangle {
-        x: 5.5px;
-        y: 4px;
-        width: 2.8px;
-        height: 16px;
-        border-radius: 1.4px;
-        background: root.spine_color;
-    }
-
-    // Upper Diagonal Blade (Faceted shard pointing up-right)
-    Path {
-        x: 0px;
-        y: 0px;
-        width: root.size;
-        height: root.size;
-        commands: "M 9.5 11 L 16.5 4 L 19 4 L 12 11 Z";
-        fill: root.blade_top_color;
-    }
-
-    // Lower Diagonal Blade (Faceted shard pointing down-right)
-    Path {
-        x: 0px;
-        y: 0px;
-        width: root.size;
-        height: root.size;
-        commands: "M 9.5 13 L 12 13 L 19 20 L 16.5 20 Z";
-        fill: root.blade_bottom_color;
-    }
-
-    // Center Energy Core Vertex
-    Rectangle {
-        x: 9.8px;
-        y: 11.2px;
-        width: 1.6px;
-        height: 1.6px;
-        border-radius: 0.8px;
-        background: #FFFFFF;
-    }
-}
+// Kripton — Native Windows living notch
+// UI shell for PRD v2.0. Sprint 0 establishes geometry, page navigation and
+// the top-attached silhouette; feature pages land in later sprints.
 
 export component AppWindow inherits Window {
     title: "Kripton";
+    width: 600px;
+    height: 220px;
     background: transparent;
     no-frame: true;
-    always-on-top: true;
-    width: 640px;
-    height: 240px;
 
-    // State properties
-    in-out property <bool> is_expanded: false;
-    in-out property <bool> is_hovered: island_touch.has-hover;
-    in-out property <bool> has_media: false;
-    in-out property <bool> is_playing: false;
-    in-out property <string> track_title: "No Media Playing";
-    in-out property <string> track_artist: "";
-    in-out property <string> source_title: "";
-    in-out property <image> album_art;
-    in-out property <bool> has_album_art: false;
-    in-out property <float> progress_ratio: 0.0;
-    in-out property <string> position_text: "0:00";
-    in-out property <string> duration_text: "0:00";
-    in-out property <string> clock_text: "12:00";
+    default-font-family: "Segoe UI Variable Display";
+    default-font-size: 12px;
 
-    // System HUD properties (Fase 3: WASAPI Volume & Battery)
-    in-out property <bool> is_hud_active: false;
-    in-out property <string> hud_icon: "🔊";
-    in-out property <string> hud_title: "30%";
-    in-out property <string> hud_subtitle: "Master Volume";
-    in-out property <float> hud_progress: 0.3;
-    in-out property <bool> hud_show_bar: true;
-    in-out property <color> hud_bar_color: #1DB954;
+    // --- Driven by Rust -----------------------------------------------------
+    in property <length> notch-width: 190px;
+    in property <length> notch-height: 38px;
+    in property <bool> expanded: false;
+    in property <int> active-page: 0;
+    in property <string> page-title: "Music";
+    in property <string> page-subtitle: "";
+    in property <string> clock-text: "00:00";
+    in property <string> date-text: "";
+    in property <string> build-label: "v1.0.0";
+    in property <bool> lyrics-enabled: false;
+    in property <image> mascot: @image-url("../assets/plasma_core.png");
 
-    // Screenshot & Shelf properties (Fase 4: Clipboard & Quick Shelf)
-    in-out property <bool> is_shelf_active: false;
-    in-out property <bool> has_shelf_item: false;
-    in-out property <image> shelf_thumb;
-    in-out property <string> shelf_filename: "";
-    in-out property <string> shelf_res_text: "";
-    in-out property <string> shelf_path: "";
+    callback toggle-expand();
+    callback page-selected(int);
+    callback quit();
 
-    // Equalizer visualizer heights
-    in-out property <length> bar1_height: 6px;
-    in-out property <length> bar2_height: 12px;
-    in-out property <length> bar3_height: 9px;
-    in-out property <length> bar4_height: 15px;
+    // --- Design tokens ------------------------------------------------------
+    private property <length> ear-radius: 12px;
+    private property <length> bottom-radius: 18px;
+    private property <duration> morph-duration: 340ms;
+    private property <duration> breath-duration: 2000ms;
+    private property <length> idle-orb-size: 44px;
+    private property <bool> breathing: false;
+    private property <int> page-count: 5;
 
-    // Callbacks to Rust backend
-    callback toggle_play_pause();
-    callback next_track();
-    callback prev_track();
-    callback toggle_expand();
+    Timer {
+        interval: root.breath-duration;
+        running: true;
+        triggered => {
+            root.breathing = !root.breathing;
+        }
+    }
 
-    // Shelf Callbacks
-    callback shelf_open();
-    callback shelf_copy_path();
-    callback shelf_dismiss();
+    // 1. Silhouette: top-attached notch with inverse concave ear fillets and
+    //    G1-smooth bottom corners. Coordinates follow the animated notch rect,
+    //    so the outline never lags behind the content during a morph.
+    Path {
+        width: root.width;
+        height: root.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: root.width / 1px;
+        viewbox-height: root.height / 1px;
+        fill: #000000;
 
-    // Mode calculation
-    property <bool> is_active: root.is_expanded || root.is_hovered || root.is_hud_active || root.is_shelf_active || (root.has_media && root.is_playing);
+        MoveTo {
+            x: (notch.x - root.ear-radius) / 1px;
+            y: 0;
+        }
+        LineTo {
+            x: (notch.x + notch.width + root.ear-radius) / 1px;
+            y: 0;
+        }
+        ArcTo {
+            radius-x: root.ear-radius / 1px;
+            radius-y: root.ear-radius / 1px;
+            sweep: true;
+            x: (notch.x + notch.width) / 1px;
+            y: root.ear-radius / 1px;
+        }
+        LineTo {
+            x: (notch.x + notch.width) / 1px;
+            y: (notch.height - root.bottom-radius) / 1px;
+        }
+        ArcTo {
+            radius-x: root.bottom-radius / 1px;
+            radius-y: root.bottom-radius / 1px;
+            sweep: true;
+            x: (notch.x + notch.width - root.bottom-radius) / 1px;
+            y: notch.height / 1px;
+        }
+        LineTo {
+            x: (notch.x + root.bottom-radius) / 1px;
+            y: notch.height / 1px;
+        }
+        ArcTo {
+            radius-x: root.bottom-radius / 1px;
+            radius-y: root.bottom-radius / 1px;
+            sweep: true;
+            x: notch.x / 1px;
+            y: (notch.height - root.bottom-radius) / 1px;
+        }
+        LineTo {
+            x: notch.x / 1px;
+            y: root.ear-radius / 1px;
+        }
+        ArcTo {
+            radius-x: root.ear-radius / 1px;
+            radius-y: root.ear-radius / 1px;
+            sweep: true;
+            x: (notch.x - root.ear-radius) / 1px;
+            y: 0;
+        }
+        Close {}
+    }
 
-    // Dynamic Island Capsule
-    island := Rectangle {
-        x: (parent.width - self.width) / 2;
-        y: 0px;
-        width: root.is_expanded ? 460px : (root.is_shelf_active && !root.is_hud_active ? 360px : (root.is_active ? 340px : 180px));
-        height: root.is_expanded ? 156px : (root.is_shelf_active && !root.is_hud_active ? 42px : (root.is_active ? 38px : 8px));
-        border-radius: root.is_expanded ? 28px : (root.is_shelf_active && !root.is_hud_active ? 21px : (root.is_active ? 19px : 4px));
-        background: #000000;
-        border-width: 1px;
-        border-color: (root.is_shelf_active && !root.is_hud_active) ? #38BDF8 : #262626;
+    // 2. Notch surface and content.
+    notch := Rectangle {
+        x: (root.width - self.width) / 2;
+        y: 0;
+        width: root.notch-width;
+        height: root.notch-height;
+        background: transparent;
         clip: true;
 
-        animate width { duration: 300ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
-        animate height { duration: 300ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
-        animate border-radius { duration: 300ms; easing: cubic-bezier(0.16, 1, 0.3, 1); }
-        animate border-color { duration: 250ms; }
-
-        island_touch := TouchArea {
-            pointer-event(event) => {
-                if (event.kind == PointerEventKind.up && !root.is_expanded && !root.is_hud_active && !root.is_shelf_active) {
-                    root.is_expanded = true;
-                }
-            }
-            mouse-cursor: pointer;
+        // Slight underdamped spring: cubic-bezier(ζ≈0.72) overshoot.
+        animate width {
+            duration: root.morph-duration;
+            easing: cubic-bezier(0.34, 1.22, 0.64, 1);
+        }
+        animate height {
+            duration: root.morph-duration;
+            easing: cubic-bezier(0.34, 1.22, 0.64, 1);
         }
 
-        // ==========================================
-        // 1. SYSTEM HUD OVERLAY (Volume & Battery)
-        // ==========================================
-        if root.is_hud_active && !root.is_expanded : HorizontalLayout {
-            padding-left: 14px;
-            padding-right: 14px;
-            alignment: space-between;
+        // Bottom ambient ionized glow shared by idle and expanded modes. It stays
+        // inset from the rounded bottom corners so it never bleeds outside the
+        // silhouette (Slint clipping is rectangular).
+        Rectangle {
+            x: 26px;
+            y: parent.height - 20px;
+            width: parent.width - 52px;
+            height: 18px;
+            background: @radial-gradient(circle, #4F46E5AA 0%, #7C3AED55 42%, transparent 82%);
+            opacity: 0.45;
+        }
 
-            // Left: Icon + Title
-            HorizontalLayout {
-                spacing: 10px;
-                alignment: start;
-
-                Text {
-                    text: root.hud_icon;
-                    font-size: 15px;
-                    vertical-alignment: center;
-                }
-
-                Text {
-                    text: root.hud_title;
-                    color: #FFFFFF;
-                    font-size: 13px;
-                    font-weight: 700;
-                    vertical-alignment: center;
-                }
+        // Whole-notch interaction layer. It sits below the expanded view so the
+        // pagination dots (and later feature controls) receive clicks first.
+        TouchArea {
+            clicked => {
+                root.toggle-expand();
             }
-
-            // Right: Level Bar or Subtitle
-            HorizontalLayout {
-                spacing: 8px;
-                alignment: end;
-
-                if root.hud_show_bar : Rectangle {
-                    width: 120px;
-                    height: 6px;
-                    border-radius: 3px;
-                    background: #27272A;
-                    y: (parent.height - self.height) / 2;
-
-                    Rectangle {
-                        x: 0px;
-                        y: 0px;
-                        height: 100%;
-                        border-radius: 3px;
-                        width: parent.width * max(0.0, min(1.0, root.hud_progress));
-                        background: root.hud_bar_color;
-                        animate width { duration: 100ms; }
-                    }
-                }
-
-                if !root.hud_show_bar : Text {
-                    text: root.hud_subtitle;
-                    color: #A1A1AA;
-                    font-size: 11px;
-                    font-weight: 500;
-                    vertical-alignment: center;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.up && e.button == PointerEventButton.right) {
+                    root.quit();
                 }
             }
         }
 
-        // =========================================================
-        // 2. QUICK SCREENSHOT SHELF OVERLAY (Fase 4: Win+Shift+S)
-        // =========================================================
-        if !root.is_hud_active && root.is_shelf_active && !root.is_expanded : HorizontalLayout {
-            padding-left: 10px;
-            padding-right: 12px;
-            alignment: space-between;
+        // --- Idle: the Ionized Plasma Core ---------------------------------
+        if !root.expanded: Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: transparent;
 
-            // Left: Thumbnail + Info
-            HorizontalLayout {
-                spacing: 10px;
-                alignment: start;
-
-                // Thumbnail preview
-                Rectangle {
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 6px;
-                    background: #18181B;
-                    border-width: 1px;
-                    border-color: #27272A;
-                    clip: true;
-                    y: (parent.height - self.height) / 2;
-
-                    Image {
-                        source: root.shelf_thumb;
-                        width: 100%;
-                        height: 100%;
-                        image-fit: cover;
-                    }
-                }
-
-                // Title + Resolution badge
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 1px;
-
-                    Text {
-                        text: "Screenshot Captured";
-                        color: #FFFFFF;
-                        font-size: 11px;
-                        font-weight: 700;
-                    }
-
-                    Text {
-                        text: root.shelf_res_text;
-                        color: #38BDF8;
-                        font-size: 10px;
-                        font-weight: 600;
-                    }
-                }
+            Rectangle {
+                width: 84px;
+                height: 34px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2 + 3px;
+                background: @radial-gradient(circle, #00F0FF33 0%, #7C3AED1F 55%, transparent 100%);
             }
 
-            // Right: Action buttons (Open, Copy Path, Dismiss)
-            HorizontalLayout {
-                spacing: 8px;
-                alignment: end;
-
-                // Open in Explorer/Viewer button
-                Rectangle {
-                    width: 26px;
-                    height: 26px;
-                    border-radius: 13px;
-                    background: open_touch.has-hover ? #27272A : #18181B;
-                    y: (parent.height - self.height) / 2;
-
-                    Text {
-                        text: "👁";
-                        font-size: 12px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-
-                    open_touch := TouchArea {
-                        clicked => { root.shelf_open(); }
-                        mouse-cursor: pointer;
-                    }
-                }
-
-                // Copy Path button
-                Rectangle {
-                    width: 26px;
-                    height: 26px;
-                    border-radius: 13px;
-                    background: copy_touch.has-hover ? #27272A : #18181B;
-                    y: (parent.height - self.height) / 2;
-
-                    Text {
-                        text: "📋";
-                        font-size: 12px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-
-                    copy_touch := TouchArea {
-                        clicked => { root.shelf_copy_path(); }
-                        mouse-cursor: pointer;
-                    }
-                }
-
-                // Dismiss button
-                Rectangle {
-                    width: 22px;
-                    height: 22px;
-                    border-radius: 11px;
-                    background: dismiss_touch.has-hover ? #27272A : transparent;
-                    y: (parent.height - self.height) / 2;
-
-                    Text {
-                        text: "✕";
-                        color: #71717A;
-                        font-size: 11px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-
-                    dismiss_touch := TouchArea {
-                        clicked => { root.shelf_dismiss(); }
-                        mouse-cursor: pointer;
-                    }
+            Image {
+                source: root.mascot;
+                width: root.idle-orb-size + (root.breathing ? 4px : 0px);
+                height: self.width;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2 + 1px;
+                image-fit: contain;
+                animate width {
+                    duration: root.breath-duration;
+                    easing: ease-in-out;
                 }
             }
         }
 
-        // =========================================================
-        // 3. COMPACT VIEW (Hovered or Music Playing or Idle Woken)
-        // =========================================================
-        if !root.is_hud_active && !root.is_shelf_active && !root.is_expanded && root.is_active : HorizontalLayout {
-            padding-left: 12px;
-            padding-right: 14px;
-            alignment: space-between;
-
-            // Left: Album Art Dot OR Geometric "K" Silhouette (Idle)
-            HorizontalLayout {
-                spacing: 9px;
-                alignment: start;
-
-                // When Media with Album Art is Active
-                if root.has_media && root.has_album_art : Rectangle {
-                    width: 24px;
-                    height: 24px;
-                    border-radius: 12px;
-                    background: #1DB954;
-                    clip: true;
-                    y: (parent.height - self.height) / 2;
-
-                    Image {
-                        source: root.album_art;
-                        width: 100%;
-                        height: 100%;
-                        image-fit: cover;
-                    }
-                }
-
-                // When Media without Art is Active
-                if root.has_media && !root.has_album_art : Rectangle {
-                    width: 24px;
-                    height: 24px;
-                    border-radius: 12px;
-                    background: #1DB954;
-                    y: (parent.height - self.height) / 2;
-
-                    Text {
-                        text: "🎵";
-                        font-size: 11px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                }
-
-                // IDLE MODE: Elegant Geometric Silhouette "K" Monogram
-                if !root.has_media : GeometricK {
-                    size: 24px;
-                    y: (parent.height - self.height) / 2;
-                }
-
-                // Title snippet
-                VerticalLayout {
-                    alignment: center;
-
-                    // When Media is playing
-                    if root.has_media : Text {
-                        text: root.track_title;
-                        color: #FFFFFF;
-                        font-size: 12px;
-                        font-weight: 600;
-                        vertical-alignment: center;
-                        overflow: elide;
-                        max-width: 170px;
-                    }
-
-                    // When Idle: Clean Kripton Branding & Status
-                    if !root.has_media : HorizontalLayout {
-                        spacing: 6px;
-                        alignment: start;
-
-                        Text {
-                            text: "KRIPTON";
-                            color: #FFFFFF;
-                            font-size: 11px;
-                            font-weight: 800;
-                            vertical-alignment: center;
-                        }
-
-                        // Subtle ready pulse dot
-                        Rectangle {
-                            width: 5px;
-                            height: 5px;
-                            border-radius: 2.5px;
-                            background: #10B981;
-                            y: (parent.height - self.height) / 2;
-                        }
-
-                        Text {
-                            text: "READY";
-                            color: #71717A;
-                            font-size: 10px;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                        }
-                    }
-                }
-            }
-
-            // Right: Equalizer (if playing) + Clock
-            HorizontalLayout {
-                spacing: 8px;
-                alignment: end;
-
-                // Procedural Equalizer (only when media is playing)
-                if root.has_media && root.is_playing : HorizontalLayout {
-                    spacing: 2.5px;
-                    alignment: center;
-                    y: (parent.height - 18px) / 2;
-                    height: 18px;
-
-                    Rectangle {
-                        width: 3px;
-                        height: root.bar1_height;
-                        border-radius: 1.5px;
-                        background: #1DB954;
-                        y: (parent.height - self.height) / 2;
-                        animate height { duration: 110ms; }
-                    }
-                    Rectangle {
-                        width: 3px;
-                        height: root.bar2_height;
-                        border-radius: 1.5px;
-                        background: #1DB954;
-                        y: (parent.height - self.height) / 2;
-                        animate height { duration: 110ms; }
-                    }
-                    Rectangle {
-                        width: 3px;
-                        height: root.bar3_height;
-                        border-radius: 1.5px;
-                        background: #1DB954;
-                        y: (parent.height - self.height) / 2;
-                        animate height { duration: 110ms; }
-                    }
-                    Rectangle {
-                        width: 3px;
-                        height: root.bar4_height;
-                        border-radius: 1.5px;
-                        background: #1DB954;
-                        y: (parent.height - self.height) / 2;
-                        animate height { duration: 110ms; }
-                    }
-                }
-
-                // Clock
-                Text {
-                    text: root.clock_text;
-                    color: #A3A3A3;
-                    font-size: 12px;
-                    font-weight: 500;
-                    vertical-alignment: center;
-                }
-            }
-        }
-
-        // ==========================================
-        // 4. EXPANDED HUD VIEW (Full Media Center)
-        // ==========================================
-        if root.is_expanded : VerticalLayout {
+        // --- Expanded shell ------------------------------------------------
+        if root.expanded: VerticalLayout {
+            width: parent.width;
+            height: parent.height;
             padding-left: 16px;
             padding-right: 16px;
-            padding-top: 14px;
-            padding-bottom: 12px;
-            spacing: 10px;
+            padding-top: 9px;
+            padding-bottom: 8px;
+            spacing: 6px;
 
-            // Row 1: Header (Cover + Titles + Collapse button)
+            // Header: mascot, page identity, date & clock.
             HorizontalLayout {
-                spacing: 12px;
-                alignment: space-between;
+                height: 32px;
+                spacing: 9px;
 
-                // Left: Album Art & Track Info
-                HorizontalLayout {
-                    spacing: 12px;
-
-                    // Large Album Art or Large Geometric K
-                    Rectangle {
-                        width: 52px;
-                        height: 52px;
-                        border-radius: 12px;
-                        background: #18181B;
-                        border-width: 1px;
-                        border-color: #27272A;
-                        clip: true;
-
-                        if root.has_album_art : Image {
-                            source: root.album_art;
-                            width: 100%;
-                            height: 100%;
-                            image-fit: cover;
-                        }
-                        if !root.has_album_art : GeometricK {
-                            size: 24px;
-                        }
-                    }
-
-                    // Title + Artist + App Source
-                    VerticalLayout {
-                        alignment: center;
-                        spacing: 2px;
-
-                        Text {
-                            text: root.track_title;
-                            color: #FFFFFF;
-                            font-size: 14px;
-                            font-weight: 700;
-                            overflow: elide;
-                            max-width: 280px;
-                        }
-
-                        Text {
-                            text: root.track_artist != "" ? root.track_artist : (root.has_media ? "Unknown Artist" : "System Standby");
-                            color: #A1A1AA;
-                            font-size: 12px;
-                            overflow: elide;
-                            max-width: 280px;
-                        }
-
-                        if root.source_title != "" : Text {
-                            text: root.source_title;
-                            color: #1DB954;
-                            font-size: 10px;
-                            font-weight: 600;
-                            overflow: elide;
-                        }
-                    }
+                Image {
+                    width: 32px;
+                    height: 32px;
+                    source: root.mascot;
+                    image-fit: contain;
                 }
 
-                // Right: Close/Collapse chevron
-                collapse_btn := Rectangle {
-                    width: 28px;
-                    height: 28px;
-                    border-radius: 14px;
-                    background: collapse_touch.has-hover ? #27272A : transparent;
-                    y: 0px;
-
-                    Text {
-                        text: "✕";
-                        color: collapse_touch.has-hover ? #FFFFFF : #71717A;
-                        font-size: 12px;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-
-                    collapse_touch := TouchArea {
-                        clicked => {
-                            root.is_expanded = false;
-                        }
-                        mouse-cursor: pointer;
-                    }
-                }
-            }
-
-            // Row 2: Timeline Progress Bar
-            VerticalLayout {
-                spacing: 3px;
-
-                // Progress Track
-                Rectangle {
-                    height: 4px;
-                    border-radius: 2px;
-                    background: #27272A;
-
-                    // Progress Fill
-                    Rectangle {
-                        x: 0px;
-                        y: 0px;
-                        height: 4px;
-                        border-radius: 2px;
-                        width: parent.width * max(0.0, min(1.0, root.progress_ratio));
-                        background: #1DB954;
-                    }
-                }
-
-                // Time labels
-                HorizontalLayout {
-                    alignment: space-between;
-
-                    Text {
-                        text: root.position_text;
-                        color: #71717A;
-                        font-size: 10px;
-                    }
-                    Text {
-                        text: root.duration_text;
-                        color: #71717A;
-                        font-size: 10px;
-                    }
-                }
-            }
-
-            // Row 3: Media Control Buttons & Shelf Action Shortcut
-            HorizontalLayout {
-                alignment: space-between;
-
-                // Left: Shelf quick link if screenshot captured
-                if root.has_shelf_item : Rectangle {
-                    width: 80px;
-                    height: 28px;
-                    border-radius: 14px;
-                    background: shelf_btn_touch.has-hover ? #27272A : #18181B;
-                    y: (parent.height - self.height) / 2;
-
-                    HorizontalLayout {
-                        spacing: 4px;
-                        alignment: center;
-                        Text {
-                            text: "📸";
-                            font-size: 11px;
-                            vertical-alignment: center;
-                        }
-                        Text {
-                            text: "Shelf";
-                            color: #38BDF8;
-                            font-size: 11px;
-                            font-weight: 600;
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    shelf_btn_touch := TouchArea {
-                        clicked => {
-                            root.shelf_open();
-                        }
-                        mouse-cursor: pointer;
-                    }
-                }
-
-                if !root.has_shelf_item : Rectangle {
-                    width: 80px;
-                }
-
-                // Center: Playback Buttons
-                HorizontalLayout {
+                VerticalLayout {
                     alignment: center;
-                    spacing: 24px;
+                    spacing: 0px;
 
-                    // Previous Track Button
-                    prev_btn := Rectangle {
-                        width: 36px;
-                        height: 36px;
-                        border-radius: 18px;
-                        background: prev_touch.has-hover ? #27272A : transparent;
-
-                        Text {
-                            text: "⏮";
-                            font-size: 16px;
-                            color: prev_touch.has-hover ? #FFFFFF : #D4D4D8;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-
-                        prev_touch := TouchArea {
-                            clicked => {
-                                root.prev_track();
-                            }
-                            mouse-cursor: pointer;
-                        }
+                    Text {
+                        text: root.page-title;
+                        color: #FFFFFF;
+                        font-size: 15px;
+                        font-weight: 700;
                     }
-
-                    // Play / Pause Primary Button
-                    play_btn := Rectangle {
-                        width: 40px;
-                        height: 40px;
-                        border-radius: 20px;
-                        background: play_touch.has-hover ? #FFFFFF : #E4E4E7;
-
-                        Text {
-                            text: root.is_playing ? "⏸" : "▶";
-                            font-size: 17px;
-                            color: #09090B;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-
-                        play_touch := TouchArea {
-                            clicked => {
-                                root.toggle_play_pause();
-                            }
-                            mouse-cursor: pointer;
-                        }
-                    }
-
-                    // Next Track Button
-                    next_btn := Rectangle {
-                        width: 36px;
-                        height: 36px;
-                        border-radius: 18px;
-                        background: next_touch.has-hover ? #27272A : transparent;
-
-                        Text {
-                            text: "⏭";
-                            font-size: 16px;
-                            color: next_touch.has-hover ? #FFFFFF : #D4D4D8;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-
-                        next_touch := TouchArea {
-                            clicked => {
-                                root.next_track();
-                            }
-                            mouse-cursor: pointer;
-                        }
+                    Text {
+                        text: root.page-subtitle;
+                        color: #9CA3AF;
+                        font-size: 10px;
+                        font-weight: 400;
+                        overflow: TextOverflow.elide;
                     }
                 }
 
-                // Right spacer to keep center aligned
                 Rectangle {
-                    width: 80px;
+                    horizontal-stretch: 1;
+                    background: transparent;
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 0px;
+
+                    Text {
+                        text: root.date-text;
+                        color: #9CA3AF;
+                        font-size: 9.5px;
+                        horizontal-alignment: right;
+                    }
+                    Text {
+                        text: root.clock-text;
+                        color: #FFFFFF;
+                        font-size: 17px;
+                        font-weight: 700;
+                        horizontal-alignment: right;
+                    }
+                }
+            }
+
+            // Page placeholder card.
+            Rectangle {
+                vertical-stretch: 1;
+                background: @linear-gradient(145deg, #101014 0%, #08080B 100%);
+                border-radius: 12px;
+                border-width: 1px;
+                border-color: #FFFFFF12;
+                clip: true;
+
+                Image {
+                    width: 132px;
+                    height: 132px;
+                    x: parent.width - 96px;
+                    y: -40px;
+                    source: root.mascot;
+                    image-fit: contain;
+                    opacity: 0.22;
+                }
+
+                VerticalLayout {
+                    padding-left: 14px;
+                    padding-right: 14px;
+                    padding-top: 10px;
+                    padding-bottom: 10px;
+                    spacing: 3px;
+                    alignment: center;
+
+                    Text {
+                        text: "SPRINT 0 · FOUNDATION";
+                        color: #6B7280;
+                        font-size: 8.5px;
+                        font-weight: 700;
+                        letter-spacing: 1.2px;
+                    }
+                    Text {
+                        text: root.page-subtitle;
+                        color: #F9FAFB;
+                        font-size: 13px;
+                        font-weight: 600;
+                        overflow: TextOverflow.elide;
+                        max-width: parent.width;
+                    }
+                    Text {
+                        text: root.build-label;
+                        color: #4B5563;
+                        font-size: 9px;
+                        overflow: TextOverflow.elide;
+                        max-width: parent.width;
+                    }
+                }
+            }
+
+            // Pagination: active capsule + four dim dots.
+            HorizontalLayout {
+                height: 12px;
+                alignment: center;
+                spacing: 2px;
+
+                for page in root.page-count: Rectangle {
+                    width: 20px;
+                    height: 12px;
+                    background: transparent;
+
+                    Rectangle {
+                        width: root.active-page == page ? 18px : 4px;
+                        height: 4px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - 4px) / 2;
+                        border-radius: 2px;
+                        background: root.active-page == page ? #FFFFFF : #4B5563;
+                        animate width {
+                            duration: 180ms;
+                            easing: ease-out;
+                        }
+                    }
+
+                    TouchArea {
+                        clicked => {
+                            root.page-selected(page);
+                        }
+                    }
                 }
             }
         }
