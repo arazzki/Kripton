@@ -3,6 +3,7 @@ use std::{
     ffi::c_void,
     mem::size_of,
     rc::Rc,
+    sync::Arc,
     time::{Duration, Instant},
 };
 
@@ -30,9 +31,10 @@ use windows::{
 
 use crate::{
     living::{Living, LivingFrame},
+    media::{self, Artwork, MediaController},
     spring::{Spring, SpringConfig},
     state::NotchMode,
-    system::AudioMeter,
+    wave::AudioWave,
     AppWindow,
 };
 
@@ -41,7 +43,7 @@ const HOVER_CLOSE_DELAY: Duration = Duration::from_millis(250);
 const HOVER_POLL_INTERVAL: Duration = Duration::from_millis(16);
 const HOVER_PADDING: f32 = 6.0;
 const LIVING_EVERY: u64 = 3; // Living properties update at ~20 fps.
-const AUDIO_EVERY: u64 = 6; // Audio peak samples at ~10 Hz.
+const MEDIA_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const COLLAPSE_REVEAL_WIDTH: f32 = 250.0;
 
 thread_local! {
@@ -252,38 +254,71 @@ pub fn collapsed_mode() -> NotchMode {
     }
 }
 
-pub fn install_overlay(app: &AppWindow) {
-    try_attach(app.as_weak(), 0);
+pub fn install_overlay(app: &AppWindow, media: MediaController, audio: AudioWave) {
+    try_attach(app.as_weak(), 0, media, Arc::new(audio));
 }
 
-fn try_attach(app: Weak<AppWindow>, attempts: u32) {
+fn try_attach(app: Weak<AppWindow>, attempts: u32, media: MediaController, audio: Arc<AudioWave>) {
     Timer::single_shot(Duration::from_millis(16), move || {
         let Some(app) = app.upgrade() else {
             return;
         };
 
         if let Some(overlay) = OverlayWindow::attach(&app) {
-            install_runtime(&app, overlay);
+            install_runtime(&app, overlay, media, audio);
         } else if attempts < 120 {
-            try_attach(app.as_weak(), attempts + 1);
+            try_attach(app.as_weak(), attempts + 1, media.clone(), audio.clone());
         } else {
             eprintln!("[Kripton] native window handle was not available after 2 seconds");
         }
     });
 }
 
-fn install_runtime(app: &AppWindow, overlay: OverlayWindow) {
-    struct Runtime {
-        entered_at: Option<Instant>,
-        left_at: Option<Instant>,
-        click_through: bool,
-        last_tick: Instant,
-        last_living: Instant,
-        ticks: u64,
-        peak: f32,
-        media_active: bool,
-    }
+struct PlaybackClock {
+    position_ms: u64,
+    duration_ms: u64,
+    playing: bool,
+    synced_at: Instant,
+}
 
+impl PlaybackClock {
+    fn position(&self, now: Instant) -> u64 {
+        if !self.playing {
+            return self.position_ms;
+        }
+        let elapsed = now.saturating_duration_since(self.synced_at).as_millis() as u64;
+        let projected = self.position_ms.saturating_add(elapsed);
+        if self.duration_ms > 0 {
+            projected.min(self.duration_ms)
+        } else {
+            projected
+        }
+    }
+}
+
+struct Runtime {
+    entered_at: Option<Instant>,
+    left_at: Option<Instant>,
+    click_through: bool,
+    last_tick: Instant,
+    last_living: Instant,
+    last_media_poll: Instant,
+    ticks: u64,
+    media_active: bool,
+    media: MediaController,
+    audio: Arc<AudioWave>,
+    playing: bool,
+    track_generation: u64,
+    playback: PlaybackClock,
+    elapsed_seconds: u64,
+}
+
+fn install_runtime(
+    app: &AppWindow,
+    overlay: OverlayWindow,
+    media: MediaController,
+    audio: Arc<AudioWave>,
+) {
     let weak = app.as_weak();
     let runtime = Rc::new(RefCell::new(Runtime {
         entered_at: None,
@@ -291,25 +326,46 @@ fn install_runtime(app: &AppWindow, overlay: OverlayWindow) {
         click_through: true,
         last_tick: Instant::now(),
         last_living: Instant::now(),
+        last_media_poll: Instant::now() - MEDIA_POLL_INTERVAL,
         ticks: 0,
-        peak: 0.0,
         media_active: MEDIA_ACTIVE.with(Cell::get),
+        media: media.clone(),
+        audio,
+        playing: false,
+        track_generation: 0,
+        playback: PlaybackClock {
+            position_ms: 0,
+            duration_ms: 0,
+            playing: false,
+            synced_at: Instant::now(),
+        },
+        elapsed_seconds: u64::MAX,
     }));
 
+    install_media_callbacks(app, &runtime);
+
     let mut living = Living::new();
-    let mut meter = AudioMeter::new();
+    let runtime_for_timer = runtime.clone();
+    let weak_for_timer = weak.clone();
 
     let timer = Timer::default();
     timer.start(TimerMode::Repeated, HOVER_POLL_INTERVAL, move || {
-        let Some(app) = weak.upgrade() else {
+        let Some(app) = weak_for_timer.upgrade() else {
             return;
         };
 
         let now = Instant::now();
-        let mut runtime = runtime.borrow_mut();
+        let mut runtime = runtime_for_timer.borrow_mut();
         let dt = (now - runtime.last_tick).as_secs_f32().clamp(0.001, 0.05);
         runtime.last_tick = now;
         runtime.ticks = runtime.ticks.wrapping_add(1);
+
+        // Keep music state fresh even while the notch is collapsed: Closed
+        // mode depends on it and hover-open must already show the right track.
+        if now.duration_since(runtime.last_media_poll) >= MEDIA_POLL_INTERVAL {
+            runtime.last_media_poll = now;
+            poll_media(&app, &mut runtime, now);
+        }
 
         // Advance the geometry spring every tick for 60 fps morphs.
         MORPH.with(|morph| {
@@ -367,19 +423,22 @@ fn install_runtime(app: &AppWindow, overlay: OverlayWindow) {
             }
         }
 
-        // Living mascot at ~30 fps, audio sampled at ~10 Hz.
+        // Timeline: smooth 60 fps interpolation between SMTC polls.
+        if app.get_expanded() && app.get_active_page() == 0 {
+            update_timeline(&app, &mut runtime, now);
+        }
+
+        // Living mascot at ~20 fps, driven by the real spectrum.
         if runtime.ticks.is_multiple_of(LIVING_EVERY) {
             let living_dt = (now - runtime.last_living).as_secs_f32().clamp(0.001, 0.1);
             runtime.last_living = now;
 
-            if runtime.ticks.is_multiple_of(AUDIO_EVERY) {
-                runtime.peak = meter.peak();
-            }
-
             let frame = living.tick(
                 living_dt,
                 overlay.cursor_relative_to_notch(&app),
-                runtime.peak,
+                runtime.audio.peak(),
+                runtime.playing,
+                runtime.audio.bands(),
             );
             apply_living(&app, &frame);
 
@@ -396,6 +455,164 @@ fn install_runtime(app: &AppWindow, overlay: OverlayWindow) {
     // The overlay needs its runtime for the whole process lifetime. Leaking
     // this handle is intentional; dropping it would silently stop the loop.
     std::mem::forget(timer);
+}
+
+fn install_media_callbacks(app: &AppWindow, runtime: &Rc<RefCell<Runtime>>) {
+    let media = runtime.borrow().media.clone();
+
+    let media_play = media.clone();
+    app.on_media_play_pause(move || media_play.toggle_play_pause());
+
+    let media_next = media.clone();
+    app.on_media_next(move || media_next.next());
+
+    let media_previous = media.clone();
+    app.on_media_previous(move || media_previous.previous());
+
+    let runtime_open = runtime.clone();
+    app.on_media_open_source(move || {
+        let snapshot = runtime_open.borrow().media.snapshot();
+        media::open_source(&snapshot.aumid);
+    });
+
+    let runtime_preview = runtime.clone();
+    let weak_preview = app.as_weak();
+    app.on_media_seek_preview(move |fraction| {
+        let fraction = fraction.clamp(0.0, 1.0);
+        let mut runtime = runtime_preview.borrow_mut();
+        let duration = runtime.playback.duration_ms;
+        if duration == 0 {
+            return;
+        }
+        let target = (fraction as f64 * duration as f64).round() as u64;
+        runtime.elapsed_seconds = target / 1000;
+        app_show_position(&weak_preview, fraction, target, duration);
+    });
+
+    let runtime_commit = runtime.clone();
+    let weak_commit = app.as_weak();
+    app.on_media_seek_commit(move |fraction| {
+        let fraction = fraction.clamp(0.0, 1.0);
+        let mut runtime = runtime_commit.borrow_mut();
+        let duration = runtime.playback.duration_ms;
+        if duration == 0 {
+            return;
+        }
+        let target = (fraction as f64 * duration as f64).round() as u64;
+        runtime.playback.position_ms = target;
+        runtime.playback.synced_at = Instant::now();
+        runtime.elapsed_seconds = target / 1000;
+        runtime.media.seek(target);
+        app_show_position(&weak_commit, fraction, target, duration);
+    });
+
+    let weak_lyrics = app.as_weak();
+    app.on_lyrics_toggle(move || {
+        if let Some(app) = weak_lyrics.upgrade() {
+            app.set_lyrics_enabled(!app.get_lyrics_enabled());
+        }
+    });
+}
+
+fn app_show_position(weak: &Weak<AppWindow>, fraction: f32, position: u64, duration: u64) {
+    let Some(app) = weak.upgrade() else {
+        return;
+    };
+    app.set_seek_fraction(fraction);
+    app.set_elapsed_text(format_time(position).into());
+    app.set_remaining_text(format!("-{}", format_time(duration.saturating_sub(position))).into());
+}
+
+fn poll_media(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
+    let snapshot = runtime.media.snapshot();
+
+    if snapshot.generation != runtime.track_generation {
+        runtime.track_generation = snapshot.generation;
+        app.set_has_album_art(false);
+    }
+
+    // Artwork is decoded on the SMTC worker; the texture must be built here on
+    // the UI thread.
+    if !app.get_has_album_art() {
+        if let Some(art) = runtime.media.artwork() {
+            if art.generation == snapshot.generation {
+                app.set_album_art(artwork_image(&art));
+                app.set_has_album_art(true);
+            }
+        }
+    }
+
+    let title = if snapshot.title.is_empty() {
+        "Nothing playing".to_string()
+    } else {
+        snapshot.title.clone()
+    };
+    let subtitle = if snapshot.available {
+        snapshot.subtitle()
+    } else {
+        "Start a track in any media app".to_string()
+    };
+
+    app.set_media_available(snapshot.available);
+    app.set_media_playing(snapshot.playing);
+    app.set_can_skip_previous(snapshot.can_skip_previous);
+    app.set_can_skip_next(snapshot.can_skip_next);
+    app.set_seek_enabled(snapshot.duration_ms > 0 && snapshot.can_seek);
+    if app.get_track_title().as_str() != title.as_str() {
+        app.set_track_title(title.into());
+    }
+    if app.get_track_subtitle().as_str() != subtitle.as_str() {
+        app.set_track_subtitle(subtitle.into());
+    }
+
+    runtime.playing = snapshot.playing;
+    runtime.playback = PlaybackClock {
+        position_ms: snapshot.position_ms,
+        duration_ms: snapshot.duration_ms,
+        playing: snapshot.playing,
+        synced_at: now,
+    };
+    runtime.elapsed_seconds = u64::MAX;
+}
+
+fn update_timeline(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
+    if app.get_seek_dragging() {
+        return;
+    }
+
+    let position = runtime.playback.position(now);
+    let duration = runtime.playback.duration_ms;
+    if duration > 0 {
+        app.set_seek_fraction((position as f64 / duration as f64) as f32);
+    }
+
+    let seconds = position / 1000;
+    if seconds != runtime.elapsed_seconds {
+        runtime.elapsed_seconds = seconds;
+        app.set_elapsed_text(format_time(position).into());
+        app.set_remaining_text(
+            format!("-{}", format_time(duration.saturating_sub(position))).into(),
+        );
+    }
+}
+
+fn artwork_image(art: &Artwork) -> slint::Image {
+    let buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+        &art.rgba, art.width, art.height,
+    );
+    slint::Image::from_rgba8(buffer)
+}
+
+fn format_time(milliseconds: u64) -> String {
+    let total = milliseconds / 1000;
+    let hours = total / 3600;
+    let minutes = (total / 60) % 60;
+    let seconds = total % 60;
+    if hours > 0 {
+        format!("{hours}:{minutes:02}:{seconds:02}")
+    } else {
+        format!("{minutes:02}:{seconds:02}")
+    }
 }
 
 fn apply_living(app: &AppWindow, frame: &LivingFrame) {

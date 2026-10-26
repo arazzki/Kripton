@@ -53,9 +53,32 @@ export component AppWindow inherits Window {
     in property <float> wave-3: 0.0;
     in property <float> wave-4: 0.0;
 
+    // Music page (Sprint 2).
+    in property <bool> media-available: false;
+    in property <bool> media-playing: false;
+    in property <string> track-title: "Nothing playing";
+    in property <string> track-subtitle: "Start a track in any media app";
+    in property <string> elapsed-text: "00:00";
+    in property <string> remaining-text: "-00:00";
+    in property <bool> has-album-art: false;
+    in property <image> album-art: @image-url("../assets/plasma_core.png");
+    in property <bool> seek-enabled: false;
+    in property <bool> can-skip-previous: false;
+    in property <bool> can-skip-next: false;
+    in-out property <float> seek-fraction: 0.0;
+    in-out property <bool> seek-dragging: false;
+
     callback toggle-expand();
     callback page-selected(int);
     callback quit();
+    callback media-play-pause();
+    callback media-previous();
+    callback media-next();
+    callback media-open-source();
+    callback media-seek-start();
+    callback media-seek-preview(float);
+    callback media-seek-commit(float);
+    callback lyrics-toggle();
 
     // --- Design tokens ------------------------------------------------------
     private property <length> ear-radius: 12px;
@@ -437,151 +460,674 @@ export component AppWindow inherits Window {
             VerticalLayout {
                 width: parent.width;
                 height: parent.height;
-                padding-left: 16px;
-                padding-right: 16px;
-                padding-top: 9px;
-                padding-bottom: 8px;
-                spacing: 6px;
+                padding-left: 12px;
+                padding-right: 12px;
+                padding-top: 6px;
+                padding-bottom: 4px;
+                spacing: 3px;
 
-            // Header: mascot, page identity, date & clock.
-            HorizontalLayout {
-                height: 32px;
-                spacing: 9px;
+                // --- Status header: mascot, page, battery, clock, live wave ---
+                HorizontalLayout {
+                    height: 26px;
+                    spacing: 8px;
 
-                Image {
-                    width: 32px;
-                    height: 32px;
-                    source: root.mascot;
-                    image-fit: contain;
-                }
-
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 0px;
-
-                    Text {
-                        text: root.page-title;
-                        color: #FFFFFF;
-                        font-size: 15px;
-                        font-weight: 700;
+                    Image {
+                        width: 26px;
+                        height: 26px;
+                        source: root.mascot;
+                        image-fit: contain;
                     }
-                    Text {
-                        text: root.page-subtitle;
-                        color: #9CA3AF;
-                        font-size: 10px;
-                        font-weight: 400;
-                        overflow: TextOverflow.elide;
+
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 0px;
+
+                        Text {
+                            text: root.page-title;
+                            color: #FFFFFF;
+                            font-size: 13.5px;
+                            font-weight: 700;
+                        }
+                        Text {
+                            text: root.page-subtitle;
+                            color: #9CA3AF;
+                            font-size: 8.5px;
+                            font-weight: 400;
+                            overflow: TextOverflow.elide;
+                        }
                     }
-                }
-
-                Rectangle {
-                    horizontal-stretch: 1;
-                    background: transparent;
-                }
-
-                VerticalLayout {
-                    alignment: center;
-                    spacing: 0px;
-
-                    Text {
-                        text: root.date-text;
-                        color: #9CA3AF;
-                        font-size: 9.5px;
-                        horizontal-alignment: right;
-                    }
-                    Text {
-                        text: root.clock-text;
-                        color: #FFFFFF;
-                        font-size: 17px;
-                        font-weight: 700;
-                        horizontal-alignment: right;
-                    }
-                }
-            }
-
-            // Page placeholder card.
-            Rectangle {
-                vertical-stretch: 1;
-                background: @linear-gradient(145deg, #101014 0%, #08080B 100%);
-                border-radius: 12px;
-                border-width: 1px;
-                border-color: #FFFFFF12;
-                clip: true;
-
-                Image {
-                    width: 132px;
-                    height: 132px;
-                    x: parent.width - 96px;
-                    y: -40px;
-                    source: root.mascot;
-                    image-fit: contain;
-                    opacity: 0.22;
-                }
-
-                VerticalLayout {
-                    padding-left: 14px;
-                    padding-right: 14px;
-                    padding-top: 10px;
-                    padding-bottom: 10px;
-                    spacing: 3px;
-                    alignment: center;
-
-                    Text {
-                        text: "SPRINT 1 · LIVING NOTCH";
-                        color: #6B7280;
-                        font-size: 8.5px;
-                        font-weight: 700;
-                        letter-spacing: 1.2px;
-                    }
-                    Text {
-                        text: root.page-subtitle;
-                        color: #F9FAFB;
-                        font-size: 13px;
-                        font-weight: 600;
-                        overflow: TextOverflow.elide;
-                        max-width: parent.width;
-                    }
-                    Text {
-                        text: root.build-label;
-                        color: #4B5563;
-                        font-size: 9px;
-                        overflow: TextOverflow.elide;
-                        max-width: parent.width;
-                    }
-                }
-            }
-
-            // Pagination: active capsule + four dim dots.
-            HorizontalLayout {
-                height: 12px;
-                alignment: center;
-                spacing: 2px;
-
-                for page in root.page-count: Rectangle {
-                    width: 20px;
-                    height: 12px;
-                    background: transparent;
 
                     Rectangle {
-                        width: root.active-page == page ? 18px : 4px;
-                        height: 4px;
-                        x: (parent.width - self.width) / 2;
-                        y: (parent.height - 4px) / 2;
-                        border-radius: 2px;
-                        background: root.active-page == page ? #FFFFFF : #4B5563;
-                        animate width {
-                            duration: 180ms;
-                            easing: ease-out;
+                        horizontal-stretch: 1;
+                        background: transparent;
+                    }
+
+                    // 16 px battery ring, vertically centred in the header.
+                    Rectangle {
+                        width: 16px;
+                        height: 26px;
+                        background: transparent;
+
+                        Rectangle {
+                            width: 16px;
+                            height: 16px;
+                            y: (parent.height - self.height) / 2;
+
+                        Path {
+                            width: parent.width;
+                            height: parent.height;
+                            viewbox-x: 0;
+                            viewbox-y: 0;
+                            viewbox-width: 18;
+                            viewbox-height: 18;
+                            fill: transparent;
+                            stroke: #064E3B;
+                            stroke-width: 2.6px;
+                            stroke-line-cap: round;
+                            MoveTo { x: 9; y: 1.25; }
+                            ArcTo {
+                                radius-x: 7.75;
+                                radius-y: 7.75;
+                                large-arc: false;
+                                sweep: true;
+                                x: 9;
+                                y: 16.75;
+                            }
+                            ArcTo {
+                                radius-x: 7.75;
+                                radius-y: 7.75;
+                                large-arc: false;
+                                sweep: true;
+                                x: 9;
+                                y: 1.25;
+                            }
+                        }
+
+                        if root.battery-full: Path {
+                            width: parent.width;
+                            height: parent.height;
+                            viewbox-x: 0;
+                            viewbox-y: 0;
+                            viewbox-width: 18;
+                            viewbox-height: 18;
+                            fill: transparent;
+                            stroke: root.battery-charging ? #34D399 : #22C55E;
+                            stroke-width: 2.6px;
+                            stroke-line-cap: round;
+                            MoveTo { x: 9; y: 1.25; }
+                            ArcTo {
+                                radius-x: 7.75;
+                                radius-y: 7.75;
+                                large-arc: false;
+                                sweep: true;
+                                x: 9;
+                                y: 16.75;
+                            }
+                            ArcTo {
+                                radius-x: 7.75;
+                                radius-y: 7.75;
+                                large-arc: false;
+                                sweep: true;
+                                x: 9;
+                                y: 1.25;
+                            }
+                        }
+
+                        if root.battery-arc-visible && !root.battery-full: Path {
+                            width: parent.width;
+                            height: parent.height;
+                            viewbox-x: 0;
+                            viewbox-y: 0;
+                            viewbox-width: 18;
+                            viewbox-height: 18;
+                            fill: transparent;
+                            stroke: root.battery-charging ? #34D399 : #22C55E;
+                            stroke-width: 2.6px;
+                            stroke-line-cap: round;
+                            MoveTo { x: 9; y: 1.25; }
+                            ArcTo {
+                                radius-x: 7.75;
+                                radius-y: 7.75;
+                                large-arc: root.battery-arc-large;
+                                sweep: true;
+                                x: root.battery-arc-x;
+                                y: root.battery-arc-y;
+                            }
+                        }
+
+                        if root.battery-charging || (!root.battery-present && root.battery-on-ac): Path {
+                            width: parent.width;
+                            height: parent.height;
+                            viewbox-x: 0;
+                            viewbox-y: 0;
+                            viewbox-width: 18;
+                            viewbox-height: 18;
+                            fill: root.battery-present ? #34D399 : #00F0FF;
+                            stroke: transparent;
+                            MoveTo { x: 10.1; y: 4.4; }
+                            LineTo { x: 6.7; y: 9.7; }
+                            LineTo { x: 8.9; y: 9.7; }
+                            LineTo { x: 7.9; y: 13.6; }
+                            LineTo { x: 11.4; y: 8.2; }
+                            LineTo { x: 9.2; y: 8.2; }
+                            Close {}
+                        }
                         }
                     }
 
-                    TouchArea {
-                        clicked => {
-                            root.page-selected(page);
+                    VerticalLayout {
+                        alignment: center;
+                        spacing: 0px;
+
+                        Text {
+                            text: root.date-text;
+                            color: #9CA3AF;
+                            font-size: 8.5px;
+                            horizontal-alignment: right;
+                        }
+                        Text {
+                            text: root.clock-text;
+                            color: #FFFFFF;
+                            font-size: 14.5px;
+                            font-weight: 700;
+                            horizontal-alignment: right;
+                        }
+                    }
+
+                    // Live 5-band wave, top right.
+                    Rectangle {
+                        width: 23px;
+                        height: 26px;
+                        background: transparent;
+
+                        Rectangle {
+                            x: 0px;
+                            width: root.wave-bar-width;
+                            height: 3px + root.wave-0 * 12px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1.25px;
+                            background: #FFFFFF;
+                        }
+                        Rectangle {
+                            x: 5px;
+                            width: root.wave-bar-width;
+                            height: 3px + root.wave-1 * 12px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1.25px;
+                            background: #FFFFFF;
+                        }
+                        Rectangle {
+                            x: 10px;
+                            width: root.wave-bar-width;
+                            height: 3px + root.wave-2 * 12px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1.25px;
+                            background: #FFFFFF;
+                        }
+                        Rectangle {
+                            x: 15px;
+                            width: root.wave-bar-width;
+                            height: 3px + root.wave-3 * 12px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1.25px;
+                            background: #FFFFFF;
+                        }
+                        Rectangle {
+                            x: 20px;
+                            width: root.wave-bar-width;
+                            height: 3px + root.wave-4 * 12px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1.25px;
+                            background: #FFFFFF;
                         }
                     }
                 }
-            }
+
+                // --- Page card -------------------------------------------------
+                Rectangle {
+                    vertical-stretch: 1;
+                    background: @linear-gradient(145deg, #101014 0%, #08080B 100%);
+                    border-radius: 12px;
+                    border-width: 1px;
+                    border-color: #FFFFFF12;
+                    clip: true;
+
+                    Image {
+                        width: 132px;
+                        height: 132px;
+                        x: parent.width - 96px;
+                        y: -40px;
+                        source: root.mascot;
+                        image-fit: contain;
+                        opacity: root.active-page == 0 ? 0.10 : 0.22;
+                    }
+
+                    // --- Music page -------------------------------------------
+                    if root.active-page == 0: VerticalLayout {
+                        alignment: center;
+                        padding-left: 8px;
+                        padding-right: 8px;
+                        padding-top: 5px;
+                        padding-bottom: 4px;
+                        spacing: 3px;
+
+                        // Album art, track identity and open-source button.
+                        HorizontalLayout {
+                            height: 64px;
+                            spacing: 10px;
+
+                            Rectangle {
+                                width: 64px;
+                                height: 64px;
+                                border-radius: 14px;
+                                clip: true;
+                                background: @linear-gradient(135deg, #1F2937 0%, #0B0B0E 100%);
+
+                                if root.has-album-art: Image {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    source: root.album-art;
+                                    image-fit: cover;
+                                }
+                                if !root.has-album-art: Image {
+                                    width: 38px;
+                                    height: 38px;
+                                    x: (parent.width - self.width) / 2;
+                                    y: (parent.height - self.height) / 2;
+                                    source: root.mascot;
+                                    image-fit: contain;
+                                    opacity: 0.35;
+                                }
+                            }
+
+                            VerticalLayout {
+                                vertical-stretch: 1;
+                                alignment: center;
+                                spacing: 1px;
+
+                                Text {
+                                    text: root.track-title;
+                                    color: #FFFFFF;
+                                    font-size: 16px;
+                                    font-weight: 700;
+                                    overflow: TextOverflow.elide;
+                                }
+                                Text {
+                                    text: root.track-subtitle;
+                                    color: #9CA3AF;
+                                    font-size: 12px;
+                                    font-weight: 400;
+                                    overflow: TextOverflow.elide;
+                                }
+                            }
+
+                            Rectangle {
+                                width: 26px;
+                                height: 64px;
+                                background: transparent;
+
+                                Rectangle {
+                                    width: 26px;
+                                    height: 26px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 13px;
+                                    background: root.media-available ? #262626 : #1A1A1E;
+
+                                    Path {
+                                        width: 8px;
+                                        height: 12px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        viewbox-x: 0;
+                                        viewbox-y: 0;
+                                        viewbox-width: 8;
+                                        viewbox-height: 12;
+                                        fill: transparent;
+                                        stroke: root.media-available ? #E5E7EB : #4B5563;
+                                        stroke-width: 1.6px;
+                                        stroke-line-cap: round;
+                                        MoveTo { x: 2; y: 1; }
+                                        LineTo { x: 6; y: 6; }
+                                        LineTo { x: 2; y: 11; }
+                                    }
+
+                                    TouchArea {
+                                        clicked => {
+                                            root.media-open-source();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Timeline: elapsed, seek bar, remaining.
+                        HorizontalLayout {
+                            height: 14px;
+                            spacing: 7px;
+
+                            Text {
+                                text: root.elapsed-text;
+                                color: #E5E7EB;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: transparent;
+
+                                Rectangle {
+                                    x: 0;
+                                    y: (parent.height - 4px) / 2;
+                                    width: parent.width;
+                                    height: 4px;
+                                    border-radius: 2px;
+                                    background: #374151;
+
+                                    Rectangle {
+                                        width: parent.width * root.seek-fraction;
+                                        height: 4px;
+                                        border-radius: 2px;
+                                        background: #FFFFFF;
+                                    }
+
+                                    if root.seek-enabled: Rectangle {
+                                        x: parent.width * root.seek-fraction - 5px;
+                                        y: -3px;
+                                        width: 10px;
+                                        height: 10px;
+                                        border-radius: 5px;
+                                        background: #FFFFFF;
+                                        border-width: 2px;
+                                        border-color: #0B0B0E;
+                                    }
+                                }
+
+                                seek-touch := TouchArea {
+                                    pointer-event(e) => {
+                                        if (root.seek-enabled) {
+                                            if (e.kind == PointerEventKind.down) {
+                                                root.seek-dragging = true;
+                                                root.media-seek-start();
+                                                root.media-seek-preview((seek-touch.mouse-x / 1px) / (seek-touch.width / 1px));
+                                            }
+                                            if (e.kind == PointerEventKind.move && root.seek-dragging) {
+                                                root.media-seek-preview((seek-touch.mouse-x / 1px) / (seek-touch.width / 1px));
+                                            }
+                                            if (e.kind == PointerEventKind.up && root.seek-dragging) {
+                                                root.seek-dragging = false;
+                                                root.media-seek-commit((seek-touch.mouse-x / 1px) / (seek-touch.width / 1px));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: root.remaining-text;
+                                color: #E5E7EB;
+                                font-size: 11px;
+                                vertical-alignment: center;
+                                horizontal-alignment: right;
+                            }
+                        }
+
+                        // Controls: lyrics toggle, previous, play/pause, next.
+                        HorizontalLayout {
+                            height: 26px;
+                            spacing: 0px;
+
+                            Rectangle {
+                                width: 32px;
+                                background: transparent;
+
+                                Rectangle {
+                                    x: 0;
+                                    y: (parent.height - 18px) / 2;
+                                    width: 22px;
+                                    height: 18px;
+                                    border-radius: 6px;
+                                    border-width: 1px;
+                                    border-color: root.lyrics-enabled ? transparent : #4B5563;
+                                    background: root.lyrics-enabled ? #FFFFFF : #161619;
+
+                                    for dot in 3: Rectangle {
+                                        width: 2px;
+                                        height: 2px;
+                                        border-radius: 1px;
+                                        x: 5px + dot * 4px;
+                                        y: 8px;
+                                        background: root.lyrics-enabled ? #0B0B0E : #D1D5DB;
+                                    }
+
+                                    Path {
+                                        x: 4px;
+                                        y: 15px;
+                                        width: 5px;
+                                        height: 4px;
+                                        viewbox-x: 0;
+                                        viewbox-y: 0;
+                                        viewbox-width: 5;
+                                        viewbox-height: 4;
+                                        fill: root.lyrics-enabled ? #FFFFFF : #161619;
+                                        stroke: root.lyrics-enabled ? #FFFFFF : #4B5563;
+                                        stroke-width: 1px;
+                                        MoveTo { x: 0; y: 0; }
+                                        LineTo { x: 5; y: 0; }
+                                        LineTo { x: 0; y: 4; }
+                                        Close {}
+                                    }
+                                }
+
+                                TouchArea {
+                                    clicked => {
+                                        root.lyrics-toggle();
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: transparent;
+
+                                HorizontalLayout {
+                                    width: parent.width;
+                                    height: 18px;
+                                    y: (parent.height - 18px) / 2;
+                                    spacing: 18px;
+                                    alignment: center;
+
+                                    // Previous.
+                                    Rectangle {
+                                        width: 18px;
+                                        height: 18px;
+                                        background: transparent;
+
+                                        Path {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            viewbox-x: 0;
+                                            viewbox-y: 0;
+                                            viewbox-width: 18;
+                                            viewbox-height: 18;
+                                            fill: root.can-skip-previous ? #FFFFFF : #4B5563;
+                                            stroke: transparent;
+                                            MoveTo { x: 4; y: 3; }
+                                            LineTo { x: 6.2; y: 3; }
+                                            LineTo { x: 6.2; y: 15; }
+                                            LineTo { x: 4; y: 15; }
+                                            Close {}
+                                            MoveTo { x: 14.5; y: 3.5; }
+                                            LineTo { x: 7.2; y: 9; }
+                                            LineTo { x: 14.5; y: 14.5; }
+                                            Close {}
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                if (root.can-skip-previous) {
+                                                    root.media-previous();
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    // Play / pause.
+                                    Rectangle {
+                                        width: 18px;
+                                        height: 18px;
+                                        background: transparent;
+
+                                        if root.media-playing: Rectangle {
+                                            x: 3px;
+                                            y: 2px;
+                                            width: 4px;
+                                            height: 14px;
+                                            border-radius: 1.5px;
+                                            background: #FFFFFF;
+                                        }
+                                        if root.media-playing: Rectangle {
+                                            x: 11px;
+                                            y: 2px;
+                                            width: 4px;
+                                            height: 14px;
+                                            border-radius: 1.5px;
+                                            background: #FFFFFF;
+                                        }
+
+                                        if !root.media-playing: Path {
+                                            width: 18px;
+                                            height: 18px;
+                                            x: (parent.width - self.width) / 2;
+                                            y: (parent.height - self.height) / 2;
+                                            viewbox-x: 0;
+                                            viewbox-y: 0;
+                                            viewbox-width: 18;
+                                            viewbox-height: 18;
+                                            fill: #FFFFFF;
+                                            stroke: transparent;
+                                            MoveTo { x: 5; y: 2.5; }
+                                            LineTo { x: 15; y: 9; }
+                                            LineTo { x: 5; y: 15.5; }
+                                            Close {}
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.media-play-pause();
+                                            }
+                                        }
+                                    }
+
+                                    // Next.
+                                    Rectangle {
+                                        width: 18px;
+                                        height: 18px;
+                                        background: transparent;
+
+                                        Path {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            viewbox-x: 0;
+                                            viewbox-y: 0;
+                                            viewbox-width: 18;
+                                            viewbox-height: 18;
+                                            fill: root.can-skip-next ? #FFFFFF : #4B5563;
+                                            stroke: transparent;
+                                            MoveTo { x: 11.8; y: 3; }
+                                            LineTo { x: 14; y: 3; }
+                                            LineTo { x: 14; y: 15; }
+                                            LineTo { x: 11.8; y: 15; }
+                                            Close {}
+                                            MoveTo { x: 3.5; y: 3.5; }
+                                            LineTo { x: 10.8; y: 9; }
+                                            LineTo { x: 3.5; y: 14.5; }
+                                            Close {}
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                if (root.can-skip-next) {
+                                                    root.media-next();
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            Rectangle {
+                                width: 32px;
+                                background: transparent;
+                            }
+                        }
+                    }
+
+                    // --- Placeholder for later sprints -------------------------
+                    if root.active-page != 0: VerticalLayout {
+                        padding-left: 14px;
+                        padding-right: 14px;
+                        padding-top: 10px;
+                        padding-bottom: 10px;
+                        spacing: 3px;
+                        alignment: center;
+
+                        Text {
+                            text: "SPRINT 2 · MUSIC & LIVE WAVE";
+                            color: #6B7280;
+                            font-size: 8.5px;
+                            font-weight: 700;
+                            letter-spacing: 1.2px;
+                        }
+                        Text {
+                            text: root.page-subtitle;
+                            color: #F9FAFB;
+                            font-size: 13px;
+                            font-weight: 600;
+                            overflow: TextOverflow.elide;
+                            max-width: parent.width;
+                        }
+                        Text {
+                            text: root.build-label;
+                            color: #4B5563;
+                            font-size: 9px;
+                            overflow: TextOverflow.elide;
+                            max-width: parent.width;
+                        }
+                    }
+                }
+
+                // Pagination: active capsule + four dim dots.
+                HorizontalLayout {
+                    height: 10px;
+                    alignment: center;
+                    spacing: 2px;
+
+                    for page in root.page-count: Rectangle {
+                        width: 20px;
+                        height: 10px;
+                        background: transparent;
+
+                        Rectangle {
+                            width: root.active-page == page ? 22px : 4px;
+                            height: 4px;
+                            x: (parent.width - self.width) / 2;
+                            y: (parent.height - 4px) / 2;
+                            border-radius: 2px;
+                            background: root.active-page == page ? #FFFFFF : #4B5563;
+                            animate width {
+                                duration: 180ms;
+                                easing: ease-out;
+                            }
+                        }
+
+                        TouchArea {
+                            clicked => {
+                                root.page-selected(page);
+                            }
+                        }
+                    }
+                }
             }
         }
     }

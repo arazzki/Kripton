@@ -6,8 +6,8 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 | --- | --- | --- | --- |
 | 0 | Foundation | Shell native, state, geometri notch, transparansi, hover | ✅ Selesai |
 | 1 | Idle + Closed | Plasma core hidup, closed bar, spring physics | ✅ Selesai |
-| 2 | Music | WinRT SMTC, transport, seek, live wave WASAPI | ⏳ Berikutnya |
-| 3 | Lyrics | LRCLIB, lirik sinkron, mode lebar 560 px | ⏳ |
+| 2 | Music | WinRT SMTC, transport, seek, live wave WASAPI | ✅ Selesai |
+| 3 | Lyrics | LRCLIB, lirik sinkron, mode lebar 560 px | ⏳ Berikutnya |
 | 4 | Shelf | Drag & drop OLE, carousel, preview file | ⏳ |
 | 5 | Productivity | Focus timer, Water, To-do | ⏳ |
 | 6 | HUD + Release | Headphone/charging HUD, tray, autostart, installer | ⏳ |
@@ -71,25 +71,39 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 
 ---
 
-## Sprint 2 — Music + Live Sound Wave
+## Sprint 2 — Music + Live Sound Wave ✅
 
 **Tujuan:** kontrol media native melalui WinRT SMTC dan visualizer audio nyata.
 
-**Deliverables:**
+**Selesai:**
 
-1. Integrasi `Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager`.
-2. Polling metadata (judul, artis, album, status), artwork → `slint::Image`.
-3. Tombol prev/play-pause/next, seek slider interaktif, waktu berjalan/negatif.
-4. Mode Closed: 5 bar WASAPI loopback FFT (Hann N=512, 5 pita log) + attack/release smoothing.
-5. Fallback aman saat tidak ada sesi media (kembali ke Idle).
-6. Tombol `>` membuka aplikasi sumber via `IApplicationActivationManager`/ShellExecute.
+1. **SMTC** — `src/media.rs` menjalankan worker MTA khusus (`GlobalSystemMediaTransportControlsSessionManager`) dan memblokir `IAsyncOperation` dengan executor park/unpark kecil. UI thread hanya membaca snapshot biasa, jadi tidak pernah menunggu COM.
+2. **Metadata + artwork** — judul, artis, album, status, AUMID, posisi/durasi, dan tombol yang tersedia. Thumbnail dibaca lewat `IRandomAccessStreamReference` → `IBufferByteAccess`, didekode dengan `image` ke RGBA 128 px, lalu dijadikan tekstur Slint di UI thread. Track berubah → generasi naik → artwork lama dibuang.
+3. **Transport & seek** — `TryTogglePlayPauseAsync`, `TrySkipNextAsync`, `TrySkipPreviousAsync`, dan `TryChangePlaybackPositionAsync`. Posisi diinterpolasi 60 fps di antara polling 250 ms, jadi angka waktu berjalan mulus tanpa spam ke SMTC.
+4. **Live wave** — `src/wave.rs`: WASAPI loopback pada default render endpoint (MTA), mixdown mono (F32/I16/I32/U8, termasuk `WAVEFORMATEXTENSIBLE`), ring 512 sampel, Hann window, FFT radix-2 in-house, 5 pita log 40 Hz–16 kHz. Attack cepat / release lambat, dipublikasikan lewat atomik.
+5. **Header status** — mascot, judul halaman, battery ring 16 px, tanggal + jam, dan 5 bar live di kanan atas; semua ikut terlihat saat expanded maupun Closed.
+6. **Music page** — album art 64 px, judul/subjudul, tombol buka aplikasi sumber, seek bar interaktif, waktu berjalan/negatif, serta kontrol lyrics/prev/play/next.
+7. **Fallback** — tanpa sesi SMTC, halaman menampilkan "Nothing playing" dan notch kembali ke Idle setelah hening 1,6 detik. Audio non-SMTC (game, pemutar tanpa SMTC) tetap menyalakan Closed lewat peak loopback.
+8. **Buka sumber** — `IApplicationActivationManager::ActivateApplication(aumid)` dengan fallback `explorer.exe shell:AppsFolder\<aumid>`.
 
-**Acceptance:**
+**Acceptance terverifikasi:**
 
-- Metadata dan artwork berganti < 500 ms setelah track berubah.
-- Seek dan play/pause bekerja pada Spotify/browser/Apple Music.
-- Bar bergerak hanya saat audio benar-benar berbunyi (tidak memantul saat hening).
-- Tidak crash saat perangkat audio dicabut.
+- Metadata dan artwork berganti < 500 ms setelah track berubah (Spotify: "Pompeii" → "Iris" → "Don't Look Back in Anger", artwork ikut berganti).
+- Seek bekerja: klik di tengah timeline memindahkan posisi Spotify dari 2,3 detik ke 119 detik. Play/pause dan next juga diverifikasi lewat SMTC.
+- Tombol `>` membawa Spotify ke foreground (foreground process berubah dari OpenCode ke Spotify).
+- Bar bergerak hanya saat audio berbunyi. Dengan track hening, kelima bar turun ke nol; dengan sinyal uji 5 pita, bar 0–4 bergerak 0,3–0,8.
+- Hysteresis Idle/Closed tetap benar: audio berhenti → Idle; SMTC `Playing` → Closed.
+- Screenshot Idle, Closed (bar aktif), dan Music expanded diambil di Windows 1920 × 1080 @150%.
+- CPU build debug pada mesin 12 core: **Idle 0,74%**, **Closed + bar aktif 1,29%**, **expanded statis 0,25%** total. Working set Debug ±115 MB (target rilis <35 MB tetap di Sprint 6).
+
+**Known limitations (disengaja):**
+
+- Perangkat audio dicabut belum diuji secara fisik; jalur pemulihan sudah ada (capture gagal/default device berubah → reconnect 700 ms) tetapi baru diverifikasi lewat pembacaan kode.
+- Bila aplikasi memutar ke endpoint yang bukan default Windows, metadatanya benar tetapi bar mengikuti endpoint default (sesuai desain PRD).
+- Lirik masih tombol on/off tanpa konten; sinkronisasi LRCLIB di Sprint 3.
+- Expanded shell masih memakai kartu placeholder untuk Focus/Water/Shelf/To-do.
+- Aplikasi sumber dibuka tanpa membawa posisi jendela ke monitor yang sama.
+- Belum ada tray; keluar lewat klik kanan.
 
 ---
 

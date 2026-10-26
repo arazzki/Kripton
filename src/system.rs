@@ -1,21 +1,9 @@
-//! Win32 probes for battery state and the live audio peak.
+//! Win32 probe for the battery state that feeds the closed-mode ring.
 //!
-//! Sprint 1 only needs a scalar peak from the default render endpoint so the
-//! notch can tell whether media is playing. Sprint 2 replaces the scalar with
-//! a WASAPI loopback FFT for the five-band visualizer.
+//! Sprint 2 moved audio analysis to `wave.rs`: the loopback FFT reports both
+//! the five bands and the scalar peak, so no meter endpoint is needed here.
 
-use std::time::{Duration, Instant};
-
-use windows::Win32::{
-    Media::Audio::{
-        eConsole, eRender, Endpoints::IAudioMeterInformation, IMMDeviceEnumerator,
-        MMDeviceEnumerator,
-    },
-    System::{
-        Com::{CoCreateInstance, CLSCTX_ALL},
-        Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS},
-    },
-};
+use windows::Win32::System::Power::{GetSystemPowerStatus, SYSTEM_POWER_STATUS};
 
 const BATTERY_FLAG_CHARGING: u8 = 8;
 const BATTERY_FLAG_NO_BATTERY: u8 = 128;
@@ -100,75 +88,6 @@ pub fn battery_arc(percent: f32) -> BatteryArc {
         large: progress > 0.5,
         visible: progress > 0.004,
         full: progress > 0.996,
-    }
-}
-
-/// Thin wrapper around `IAudioMeterInformation` that reconnects when the
-/// default output device changes or is unplugged.
-pub struct AudioMeter {
-    meter: Option<IAudioMeterInformation>,
-    last_attempt: Instant,
-    logged_failure: bool,
-}
-
-impl AudioMeter {
-    pub fn new() -> Self {
-        let mut meter = Self {
-            meter: None,
-            last_attempt: Instant::now(),
-            logged_failure: false,
-        };
-        meter.connect();
-        meter
-    }
-
-    /// Latest peak amplitude (0.0 - 1.0) from the default render endpoint.
-    pub fn peak(&mut self) -> f32 {
-        if let Some(meter) = &self.meter {
-            match unsafe { meter.GetPeakValue() } {
-                Ok(value) => return value.clamp(0.0, 1.0),
-                Err(error) => {
-                    eprintln!("[Kripton] audio meter lost: {error}");
-                    self.meter = None;
-                    self.last_attempt = Instant::now();
-                }
-            }
-        }
-
-        if self.last_attempt.elapsed() >= Duration::from_secs(2) {
-            self.connect();
-            if let Some(meter) = &self.meter {
-                if let Ok(value) = unsafe { meter.GetPeakValue() } {
-                    return value.clamp(0.0, 1.0);
-                }
-            }
-        }
-        0.0
-    }
-
-    fn connect(&mut self) {
-        self.last_attempt = Instant::now();
-        match activate_meter() {
-            Ok(meter) => {
-                self.meter = Some(meter);
-                self.logged_failure = false;
-            }
-            Err(error) => {
-                if !self.logged_failure {
-                    eprintln!("[Kripton] audio meter unavailable: {error}");
-                    self.logged_failure = true;
-                }
-            }
-        }
-    }
-}
-
-fn activate_meter() -> windows::core::Result<IAudioMeterInformation> {
-    unsafe {
-        let enumerator: IMMDeviceEnumerator =
-            CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_ALL)?;
-        let device = enumerator.GetDefaultAudioEndpoint(eRender, eConsole)?;
-        device.Activate::<IAudioMeterInformation>(CLSCTX_ALL, None)
     }
 }
 

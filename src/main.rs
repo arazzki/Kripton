@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod living;
+mod media;
 mod spring;
 mod state;
 mod system;
+mod wave;
 mod window_ext;
 
 use std::{fs::OpenOptions, io::Write, time::Duration};
@@ -41,9 +43,14 @@ fn main() -> Result<(), slint::PlatformError> {
     update_clock(&app);
     apply_battery(&app, system::read_battery());
 
+    // Both workers publish plain snapshots through shared state, so the UI
+    // thread never blocks on COM or audio.
+    let media = media::MediaController::start();
+    let audio = wave::AudioWave::start();
+
     window_ext::apply_mode(&app, window_ext::collapsed_mode());
     app.show()?;
-    window_ext::install_overlay(&app);
+    window_ext::install_overlay(&app, media, audio);
 
     let _clock_timer = start_clock(&app);
     let _battery_timer = start_battery(&app);
@@ -61,7 +68,13 @@ fn apply_persisted_state(app: &AppWindow, store: &StateStore) {
     app.set_page_title(page.title().into());
     app.set_page_subtitle(page.subtitle().into());
     app.set_lyrics_enabled(store.with(|state| state.lyrics_enabled));
-    app.set_build_label(format!("v{} · Sprint 1 · Living Notch", env!("CARGO_PKG_VERSION")).into());
+    app.set_build_label(
+        format!(
+            "v{} · Sprint 2 · Music & Live Wave",
+            env!("CARGO_PKG_VERSION")
+        )
+        .into(),
+    );
 }
 
 fn wire_callbacks(app: &AppWindow, store: &StateStore) {
@@ -160,7 +173,7 @@ fn install_panic_logger() {
     }));
 }
 
-fn log_line(message: &str) {
+pub(crate) fn log_line(message: &str) {
     let Some(directory) = state::state_path().parent().map(|path| path.to_path_buf()) else {
         return;
     };

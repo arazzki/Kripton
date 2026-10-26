@@ -85,14 +85,23 @@ impl Living {
         }
     }
 
-    pub fn tick(&mut self, dt: f32, cursor: Option<(f32, f32)>, peak: f32) -> LivingFrame {
+    pub fn tick(
+        &mut self,
+        dt: f32,
+        cursor: Option<(f32, f32)>,
+        peak: f32,
+        playing: bool,
+        bands: [f32; 5],
+    ) -> LivingFrame {
         let dt = dt.clamp(0.001, 0.1);
         self.elapsed = (self.elapsed + dt) % 3600.0;
 
         self.smoothed_peak = self.smoothed_peak.max(peak.clamp(0.0, 1.0));
         self.smoothed_peak *= (-dt * 2.2).exp();
 
-        if self.smoothed_peak > AUDIO_THRESHOLD {
+        // A live SMTC session is authoritative even when the track is quiet;
+        // the endpoint peak keeps games and other non-SMTC audio working.
+        if self.smoothed_peak > AUDIO_THRESHOLD || playing {
             self.loud_time += dt;
             self.quiet_time = 0.0;
         } else {
@@ -118,11 +127,9 @@ impl Living {
 
         self.corona_angle = (self.corona_angle + dt * 9.0) % 360.0;
 
-        let level = (self.smoothed_peak * 5.0).sqrt().clamp(0.0, 1.0);
         for (index, bar) in self.wave.iter_mut().enumerate() {
-            let phase = self.elapsed * (7.5 + index as f32 * 0.85) + index as f32 * 1.7;
             let target = if self.media_active {
-                level * (0.70 + 0.30 * phase.sin())
+                bands[index].clamp(0.0, 1.0)
             } else {
                 0.0
             };
@@ -177,7 +184,7 @@ mod tests {
         let mut min = f32::MAX;
         let mut max = f32::MIN;
         for _ in 0..240 {
-            let frame = living.tick(1.0 / 60.0, None, 0.0);
+            let frame = living.tick(1.0 / 60.0, None, 0.0, false, [0.0; 5]);
             min = min.min(frame.orb_scale);
             max = max.max(frame.orb_scale);
         }
@@ -190,7 +197,7 @@ mod tests {
         let mut living = Living::new();
         let mut frame = LivingFrame::default();
         for _ in 0..120 {
-            frame = living.tick(1.0 / 60.0, Some((250.0, 0.0)), 0.0);
+            frame = living.tick(1.0 / 60.0, Some((250.0, 0.0)), 0.0, false, [0.0; 5]);
         }
         assert!(frame.orb_offset_x > 3.0);
         assert!(frame.orb_offset_x <= PULL_MAX + 0.01);
@@ -202,12 +209,12 @@ mod tests {
         let mut living = Living::new();
         let mut frame = LivingFrame::default();
         for _ in 0..20 {
-            frame = living.tick(1.0 / 30.0, None, 0.20);
+            frame = living.tick(1.0 / 30.0, None, 0.20, false, [0.0; 5]);
         }
         assert!(frame.media_active, "loud audio should activate Closed");
 
         for _ in 0..30 {
-            frame = living.tick(1.0 / 30.0, None, 0.0);
+            frame = living.tick(1.0 / 30.0, None, 0.0, false, [0.0; 5]);
         }
         assert!(
             frame.media_active,
@@ -215,24 +222,41 @@ mod tests {
         );
 
         for _ in 0..60 {
-            frame = living.tick(1.0 / 30.0, None, 0.0);
+            frame = living.tick(1.0 / 30.0, None, 0.0, false, [0.0; 5]);
         }
         assert!(!frame.media_active, "sustained silence should return Idle");
     }
 
     #[test]
-    fn wave_bars_decay_when_silent() {
+    fn smtc_playback_activates_without_endpoint_peak() {
         let mut living = Living::new();
-        for _ in 0..30 {
-            living.tick(1.0 / 30.0, None, 0.20);
+        let mut frame = LivingFrame::default();
+        for _ in 0..20 {
+            frame = living.tick(1.0 / 30.0, None, 0.0, true, [0.0; 5]);
         }
-        let active = living.tick(1.0 / 30.0, None, 0.20);
-        assert!(active.wave.iter().any(|bar| *bar > 0.1));
+        assert!(frame.media_active, "a playing session should open Closed");
+
+        for _ in 0..60 {
+            frame = living.tick(1.0 / 30.0, None, 0.0, false, [0.0; 5]);
+        }
+        assert!(!frame.media_active, "a paused session should return Idle");
+    }
+
+    #[test]
+    fn wave_bars_follow_the_spectrum_and_decay() {
+        let mut living = Living::new();
+        let bands = [0.9, 0.7, 0.5, 0.3, 0.1];
+        for _ in 0..30 {
+            living.tick(1.0 / 30.0, None, 0.0, true, bands);
+        }
+        let active = living.tick(1.0 / 30.0, None, 0.0, true, bands);
+        assert!(active.wave[0] > active.wave[4], "bands keep their shape");
+        assert!(active.wave[0] > 0.5);
 
         for _ in 0..120 {
-            living.tick(1.0 / 30.0, None, 0.0);
+            living.tick(1.0 / 30.0, None, 0.0, false, bands);
         }
-        let silent = living.tick(1.0 / 30.0, None, 0.0);
+        let silent = living.tick(1.0 / 30.0, None, 0.0, false, bands);
         assert!(silent.wave.iter().all(|bar| *bar < 0.01));
     }
 }

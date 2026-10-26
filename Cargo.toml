@@ -15,6 +15,10 @@ slint = { version = "1.18.1", default-features = false, features = [
     "raw-window-handle-06",
 ] }
 windows = { version = "0.62", features = [
+    "Foundation",
+    "Foundation_Collections",
+    "Media_Control",
+    "Storage_Streams",
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_Graphics_Gdi",
@@ -26,7 +30,14 @@ windows = { version = "0.62", features = [
     "Win32_System_Power",
     "Win32_System_Threading",
     "Win32_System_Variant",
+    "Win32_System_WinRT",
+    "Win32_UI_Shell",
     "Win32_UI_WindowsAndMessaging",
+] }
+image = { version = "0.25", default-features = false, features = [
+    "jpeg",
+    "png",
+    "webp",
 ] }
 raw-window-handle = "0.6"
 serde = { version = "1.0", features = ["derive"] }

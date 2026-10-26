@@ -57,7 +57,7 @@ impl Page {
 
     pub fn subtitle(self) -> &'static str {
         match self {
-            Page::Music => "WinRT SMTC media controller",
+            Page::Music => "SMTC media · live spectrum",
             Page::Focus => "Pomodoro focus timer",
             Page::Water => "Daily hydration tracker",
             Page::Shelf => "Drag & drop file shelf",

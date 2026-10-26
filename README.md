@@ -4,7 +4,7 @@
 
 Dibangun **100% dengan Rust + Slint**. Tidak ada Electron, WebView2, browser scraping, Discord RPC, skrip eksternal, atau database eksternal.
 
-> Status: **Sprint 1 — Living Notch selesai**. Shell UI, geometri notch, transparansi native, hover, serta mode **Idle** (plasma core bernapas + ferrofluid pull) dan **Closed** (battery ring, jam, live wave) sudah berjalan. Kontrol musik menyusul di Sprint 2 (lihat [`SPRINTS.md`](SPRINTS.md)).
+> Status: **Sprint 2 — Music + Live Wave selesai**. Shell notch, Idle, Closed, serta halaman **Music** (WinRT SMTC: metadata, album art, transport, seek) dan **live wave** dari FFT WASAPI loopback sudah berjalan. Lirik sinkron menyusul di Sprint 3 (lihat [`SPRINTS.md`](SPRINTS.md)).
 
 ![Kripton — concept art](assets/plasma_core_concept.png)
 
@@ -14,9 +14,9 @@ Dibangun **100% dengan Rust + Slint**. Tidak ada Electron, WebView2, browser scr
 
 ## Tampilan
 
-| Idle | Closed |
-| --- | --- |
-| Orb plasma di notch 190 × 38 px, bernapas 0.25 Hz | Battery ring 18 px, jam 24-jam, 5 bar live wave di notch 210 × 38 px |
+| Idle | Closed | Music (expanded) |
+| --- | --- | --- |
+| Orb plasma di notch 190 × 38 px, bernapas 0.25 Hz | Battery ring 18 px, jam 24-jam, 5 bar live wave di notch 210 × 38 px | Album art 64 px, judul/artis/album, seek bar, kontrol transport, header battery + jam + live wave |
 
 Shell expanded berukuran 460 × 175 px dengan header, kartu halaman, dan pagination.
 
@@ -28,8 +28,8 @@ Palet: hitam pekat `#000000`, icy cyan `#00F0FF`, emerald `#10B981`, krypton vio
 
 - [x] **Foundation** — window transparan top-center, notch dengan *inverse concave fillets*, hover expand/collapse, state JSON.
 - [x] **Idle** — plasma core tiga lapis bernapas 0.25 Hz, ferrofluid cursor pull, corona berputar.
-- [x] **Closed** — battery ring 18 px, jam digital, live sound wave 5 batang dari peak audio default endpoint.
-- [ ] **Music** — WinRT SMTC, album art, transport, seek slider.
+- [x] **Closed** — battery ring 18 px, jam digital, live sound wave 5 batang dari FFT WASAPI loopback.
+- [x] **Music** — WinRT SMTC, album art, transport, seek slider, tombol buka aplikasi sumber.
 - [ ] **Lyrics** — LRCLIB + lirik tersinkron, melebar 560 px.
 - [ ] **Focus** — Pomodoro in-notch + chime.
 - [ ] **Water** — target harian, gelombang cairan, pengingat.
@@ -45,14 +45,16 @@ Palet: hitam pekat `#000000`, icy cyan `#00F0FF`, emerald `#10B981`, krypton vio
 ```
 src/
 ├── main.rs           # bootstrap Slint, COM STA, timer jam/baterai, wiring callback
-├── living.rs         # model maskot: breathing, ferrofluid, corona, wave, hysteresis audio
+├── living.rs         # model maskot: breathing, ferrofluid, corona, wave, hysteresis media
 ├── spring.rs         # integrator pegas teredam untuk lebar/tinggi notch
 ├── state.rs          # Page/NotchMode, state.json atomik, normalisasi harian
-├── system.rs         # GetSystemPowerStatus, battery arc, WASAPI audio peak meter
-└── window_ext.rs     # Win32 overlay: topmost, toolwindow, click-through, hover, runtime loop
+├── system.rs         # GetSystemPowerStatus + geometri battery arc
+├── media.rs          # worker SMTC MTA: metadata, artwork, transport, seek, buka sumber
+├── wave.rs           # WASAPI loopback + FFT radix-2 512 → 5 pita, atomik
+└── window_ext.rs     # Win32 overlay, hover, runtime 60 fps, playback clock, callbacks
 
 ui/
-└── appwindow.slint   # shell notch, silhouette Path, idle/closed/expanded
+└── appwindow.slint   # shell notch, silhouette Path, idle/closed/expanded, Music page
 
 assets/
 ├── icon.ico            # ikon executable
@@ -72,6 +74,8 @@ tools/
 - Transisi lebar/tinggi memakai **spring teredam** (`ζ ≈ 0.72`, `ω ≈ 17 rad/s`, semi-implicit Euler). Target bisa dibalik di tengah animasi, jadi notch langsung berbalik saat kursor masuk/keluar tanpa menunggu animasi selesai.
 - Window memakai `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`, selalu topmost, dan `WS_EX_TRANSPARENT` saat kursor di luar notch agar klik menembus ke aplikasi di bawahnya.
 - Animasi maskot dibatasi **~20 fps** (bukan vsync 60 fps) supaya CPU idle tetap rendah; morph shell tetap berjalan tiap tick timer 16 ms.
+- **SMTC** berjalan di worker MTA sendiri; UI thread tidak pernah memblokir COM. Polling 300 ms, artwork didekode di worker lalu dijadikan tekstur di UI thread.
+- **Audio** dibaca dari loopback default endpoint pada worker MTA; FFT 512 titik dijalankan ~30 Hz dan hasilnya dipublikasikan lewat atomik, sehingga render tidak menunggu audio.
 
 > Renderer: **FemtoVG**. Renderer Skia/Direct3D milik Slint saat ini merender area transparan sebagai hitam di Windows, sehingga FemtoVG dipakai untuk alpha yang benar.
 
@@ -104,20 +108,23 @@ cargo build --release
 # hasil: target\release\kripton.exe
 ```
 
-## Kontrol (Sprint 1)
+## Kontrol (Sprint 2)
 
 | Aksi | Hasil |
 | --- | --- |
-| Audio mulai diputar | Notch tertutup otomatis menampilkan battery ring, jam, dan live wave |
-| Audio berhenti (±1.6 detik hening) | Kembali ke Idle dengan plasma core |
-| Arahkan kursor ke notch (60 ms) | Notch membesar ke 460 × 175 px |
+| Media mulai diputar | Notch tertutup otomatis menampilkan battery ring, jam, dan live wave dari spectrum nyata |
+| Media berhenti / dijeda (±1.6 detik) | Kembali ke Idle dengan plasma core |
+| Arahkan kursor ke notch (60 ms) | Notch membesar ke 460 × 175 px, halaman Music menampilkan track aktif |
+| Klik play/pause, prev, next | Mengirim perintah ke sesi SMTC aktif |
+| Klik/drag seek bar | Memindahkan posisi pemutaran; waktu berjalan diinterpolasi 60 fps |
+| Klik tombol `>` | Membuka aplikasi sumber (mis. Spotify) lewat AUMID |
 | Jauhkan kursor (250 ms) | Notch mengecil kembali ke Idle/Closed |
 | Klik notch | Toggle expand/collapse |
 | Klik titik pagination | Pindah halaman (Music/Focus/Water/Shelf/To-do) |
 | Klik kanan notch | Keluar dari aplikasi (sementara, sampai tray hadir) |
 | Klik di luar notch | Diteruskan ke aplikasi di bawahnya (click-through) |
 
-Hanya satu instance yang boleh berjalan; instance kedua langsung keluar.
+Hanya satu instance yang boleh berjalan; instance kedua langsung keluar. Set `KRIPTON_AUDIO_DEBUG=1` untuk menulis level FFT tiap 2 detik ke `kripton.log`.
 
 ## Data & privasi
 
@@ -133,7 +140,7 @@ Log ringan (rotasi manual, tanpa telemetri):
 %APPDATA%\Kripton\kripton.log
 ```
 
-State ditulis lewat file sementara lalu `rename`, dan state korup dikarantina menjadi `state.corrupt-YYYYMMDD-HHMMSS.json`. Tidak ada data yang dikirim ke mana pun saat ini. Nanti, lirik hanya memanggil LRCLIB secara langsung saat mode Lyrics aktif; tidak ada analytics.
+State ditulis lewat file sementara lalu `rename`, dan state korup dikarantina menjadi `state.corrupt-YYYYMMDD-HHMMSS.json`. Tidak ada data yang dikirim ke mana pun saat ini. Metadata musik dibaca lokal lewat SMTC, audio dianalisis lokal lewat loopback, dan artwork tidak pernah diunggah. Nanti, lirik hanya memanggil LRCLIB secara langsung saat mode Lyrics aktif; tidak ada analytics.
 
 ## Aset
 
