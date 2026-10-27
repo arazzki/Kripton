@@ -1,6 +1,9 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod autostart;
 mod focus;
+mod headphone;
+mod hud;
 mod living;
 mod lyrics;
 mod media;
@@ -9,6 +12,7 @@ mod spring;
 mod state;
 mod system;
 mod todo;
+mod tray;
 mod water;
 mod wave;
 mod window_ext;
@@ -44,7 +48,12 @@ fn main() -> Result<(), slint::PlatformError> {
 
     let app = AppWindow::new()?;
     apply_persisted_state(&app, &store);
-    wire_callbacks(&app, &store);
+    let tray = tray::TrayController::start(
+        true,
+        store.with(|state| state.lyrics_enabled),
+        store.with(|state| state.water_tracker.daily_goal_ml),
+    );
+    wire_callbacks(&app, &store, tray.clone());
     update_clock(&app);
     apply_battery(&app, system::read_battery());
 
@@ -53,13 +62,13 @@ fn main() -> Result<(), slint::PlatformError> {
     let media = media::MediaController::start();
     let audio = wave::AudioWave::start();
     let shelf = shelf::ShelfManager::start(store.clone());
+    let headphone = headphone::HeadphoneWatcher::start();
 
     window_ext::apply_mode(&app, window_ext::collapsed_mode());
     app.show()?;
-    window_ext::install_overlay(&app, media, audio, shelf, store.clone());
+    window_ext::install_overlay(&app, media, audio, shelf, store.clone(), tray, headphone);
 
     let _clock_timer = start_clock(&app);
-    let _battery_timer = start_battery(&app);
     log_line("event loop ready");
 
     let result = app.run();
@@ -74,10 +83,10 @@ fn apply_persisted_state(app: &AppWindow, store: &StateStore) {
     app.set_page_title(page.title().into());
     app.set_page_subtitle(page.subtitle().into());
     app.set_lyrics_enabled(store.with(|state| state.lyrics_enabled));
-    app.set_build_label(format!("v{} · Sprint 5 · Productivity", env!("CARGO_PKG_VERSION")).into());
+    app.set_build_label(format!("v{} · Sprint 6 · Hardware HUD", env!("CARGO_PKG_VERSION")).into());
 }
 
-fn wire_callbacks(app: &AppWindow, store: &StateStore) {
+fn wire_callbacks(app: &AppWindow, store: &StateStore, tray: tray::TrayController) {
     let weak_for_toggle = app.as_weak();
     app.on_toggle_expand(move || {
         if let Some(app) = weak_for_toggle.upgrade() {
@@ -121,13 +130,17 @@ fn wire_callbacks(app: &AppWindow, store: &StateStore) {
     });
 
     let store_for_quit = store.clone();
+    let tray_for_quit = tray.clone();
     app.on_quit(move || {
+        tray_for_quit.shutdown();
         let _ = store_for_quit.save();
         let _ = slint::quit_event_loop();
     });
 
     let store_for_close = store.clone();
+    let tray_for_close = tray.clone();
     app.window().on_close_requested(move || {
+        tray_for_close.shutdown();
         let _ = store_for_close.save();
         let _ = slint::quit_event_loop();
         slint::CloseRequestResponse::HideWindow
@@ -151,18 +164,7 @@ fn update_clock(app: &AppWindow) {
     app.set_date_text(now.format("%a %d %b %Y").to_string().into());
 }
 
-fn start_battery(app: &AppWindow) -> Timer {
-    let weak = app.as_weak();
-    let timer = Timer::default();
-    timer.start(TimerMode::Repeated, Duration::from_secs(30), move || {
-        if let Some(app) = weak.upgrade() {
-            apply_battery(&app, system::read_battery());
-        }
-    });
-    timer
-}
-
-fn apply_battery(app: &AppWindow, status: system::BatteryStatus) {
+pub(crate) fn apply_battery(app: &AppWindow, status: system::BatteryStatus) {
     app.set_battery_present(status.present);
     app.set_battery_on_ac(status.on_ac);
     app.set_battery_percent(status.percent);
@@ -184,6 +186,10 @@ fn install_panic_logger() {
     }));
 }
 
+// Several workers log from their own threads (tray, audio, media). Serialise
+// the append so lines never interleave mid-write.
+static LOG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 pub(crate) fn log_line(message: &str) {
     let Some(directory) = state::state_path().parent().map(|path| path.to_path_buf()) else {
         return;
@@ -191,6 +197,9 @@ pub(crate) fn log_line(message: &str) {
     if std::fs::create_dir_all(&directory).is_err() {
         return;
     }
+    let _guard = LOG_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
     if let Ok(mut file) = OpenOptions::new()
         .create(true)
         .append(true)

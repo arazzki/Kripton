@@ -67,7 +67,7 @@ impl Page {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[allow(dead_code)] // Stealth/CompactHovered/Hud are wired as needed.
+#[allow(dead_code)] // Idle/CompactHovered are wired as needed.
 pub enum NotchMode {
     Stealth,
     Idle,
@@ -75,7 +75,8 @@ pub enum NotchMode {
     Closed,
     Expanded,
     Lyrics,
-    Hud,
+    DeviceHud,
+    ChargingHud,
 }
 
 impl NotchMode {
@@ -87,8 +88,13 @@ impl NotchMode {
             NotchMode::Closed => (336.0, 34.0),
             NotchMode::Expanded => (580.0, 192.0),
             NotchMode::Lyrics => (580.0, 192.0),
-            NotchMode::Hud => (580.0, 192.0),
+            NotchMode::DeviceHud => crate::hud::HEADPHONE_SIZE,
+            NotchMode::ChargingHud => crate::hud::CHARGING_SIZE,
         }
+    }
+
+    pub fn is_hud(self) -> bool {
+        matches!(self, NotchMode::DeviceHud | NotchMode::ChargingHud)
     }
 }
 
@@ -326,5 +332,10 @@ mod tests {
         assert_eq!(NotchMode::Closed.size(), (336.0, 34.0));
         assert_eq!(NotchMode::Expanded.size(), (580.0, 192.0));
         assert_eq!(NotchMode::Lyrics.size(), (580.0, 192.0));
+        assert_eq!(NotchMode::DeviceHud.size(), (320.0, 64.0));
+        assert_eq!(NotchMode::ChargingHud.size(), (300.0, 58.0));
+        assert!(NotchMode::DeviceHud.is_hud());
+        assert!(NotchMode::ChargingHud.is_hud());
+        assert!(!NotchMode::Expanded.is_hud());
     }
 }

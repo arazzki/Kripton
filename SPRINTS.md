@@ -195,27 +195,39 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 
 ---
 
-## Sprint 6 — Hardware HUD + Tray + Release
+## Sprint 6 — Hardware HUD + Tray + Release ✅
 
 **Tujuan:** reaksi perangkat, kontrol aplikasi, dan paket distribusi.
 
-**Deliverables:**
+**Selesai:**
 
-1. **Headphone HUD** — deteksi endpoint audio default berubah (WASAPI `IMMNotificationClient`), pill 320 × 64 px, nama perangkat + `Connected` hijau, auto-hide 3 detik.
-2. **Charging HUD** — `GetSystemPowerStatus` + `WM_POWERBROADCAST`, pill 300 × 58 px, tampil 3 detik.
-3. Tray icon (Slint `SystemTrayIcon` / Win32 `Shell_NotifyIcon`): show/hide, autostart, quit.
-4. Autostart lewat `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`.
-5. Settings minimal: mulai dengan Windows, aktifkan lirik, target air.
-6. Release: optimasi LTO, installer MSIX/Inno Setup, signing opsional, versi 1.0.0.
-7. README final + screenshot/GIF, panduan troubleshooting.
+1. **Headphone HUD** — `src/headphone.rs` menjalankan worker MTA yang mendaftarkan `IMMNotificationClient`. Callback hanya menangani `eRender` + `eMultimedia`, membaca `PKEY_Device_FriendlyName` dan `PKEY_AudioEndpoint_FormFactor`, lalu mempublikasikan snapshot `HudContent` lewat `Arc<Mutex<...>>`; UI tick yang menampilkannya. Endpoint dianggap headphone bila form factor 3/5 atau namanya cocok dengan heuristik (headphone/headset/earbud/AirPods/Buds/WH-/TWS). HUD 320 × 64 px menampilkan nama perangkat + `Connected` hijau; saat default berpindah ke speaker, nama terakhir tampil sebagai `Disconnected` amber.
+2. **Charging HUD** — `GetSystemPowerStatus` dipantau tiap 250 ms dari tick runtime (winit tidak mengekspos `WM_POWERBROADCAST`, jadi polling ini menggantikan listener pesan). HUD 300 × 58 px muncul saat adaptor dicolok/dilepas, status charging berubah, baterai melewati 20%, atau mencapai penuh; tidak pernah terpicu ulang untuk state yang sama.
+3. **State machine HUD** — `src/hud.rs` menyimpan HUD aktif, mode kembali, dan batas 3 detik. Menampilkan HUD baru saat HUD lama masih hidup akan me-restart timer tanpa mengubah mode kembali. Hover dan auto-collapse diabaikan selama HUD aktif; klik pengguna membatalkan timer agar mode baru tidak ditimpa.
+4. **Tray icon** — Slint 1.18 belum punya API tray, jadi `src/tray.rs` memakai hidden message window (`KriptonTrayWindow`) + `Shell_NotifyIconW` + `TrackPopupMenu`. Double-click kiri men-toggle notch; menu berisi Show/Hide, Start with Windows, Lyrics, submenu Water goal (1.500/2.000/2.500/3.000 ml), dan Quit. Ikon ditambahkan ulang saat Explorer mengirim `TaskbarCreated`. Semua aksi masuk antrean dan hanya diterapkan di UI thread, sehingga Slint tidak pernah disentuh dari thread lain.
+5. **Show/hide tanpa keepalive hilang** — tray memakai `ShowWindow(SW_HIDE/SW_SHOWNOACTIVATE)` pada HWND overlay, bukan `ComponentHandle::hide()`, karena Slint melepas keepalive event loop saat window terakhir disembunyikan.
+6. **Autostart** — `src/autostart.rs` membaca/menulis/menghapus satu nilai `Kripton` di `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`; path executable selalu dikutip. Toggle tray dan task installer memakai nilai yang sama.
+7. **Settings minimal** — tray mengubah autostart, lirik, dan target air; lirik dan target air langsung ditulis ke `state.json` lewat `StateStore::update`, dan UI disinkronkan pada tick berikutnya.
+8. **Release 1.0.0** — `Cargo.toml` memakai versi 1.0.0 dan profil release `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `strip = true`. `build.rs` menyematkan ikon, ProductName, dan versi ke executable. `installer/kripton.iss` menyediakan installer Inno Setup 6 per-user (tanpa UAC), shortcut Start Menu/desktop opsional, task **Start Kripton with Windows** yang menulis nilai Run yang sama, dan uninstall yang menghapus nilai Run tetapi mempertahankan `%APPDATA%\Kripton`.
+9. **Dokumentasi** — README memuat status Sprint 6, kontrol tray/HUD, build release + installer, data & privasi (termasuk Run key), dan tabel troubleshooting.
 
-**Acceptance:**
+**Acceptance terverifikasi:**
 
-- HUD muncul < 300 ms setelah perangkat berubah dan hilang otomatis.
-- Tray mengontrol show/hide/quit; tidak ada proses zombie.
-- Autostart bisa dinyalakan/dimatikan dari tray.
-- `cargo build --release` menghasilkan satu `kripton.exe` yang berjalan di mesin bersih.
-- Merge `feat/prd-v2` → `main` setelah review.
+- `cargo test`: **60 test lulus** (naik dari 46), termasuk 14 test baru untuk ukuran/durasi HUD, expiry/replace/dismiss, transisi charging (plug/unplug/low/full/steady), heuristik headphone, quoting autostart, `set_goal_ml`, dan mode HUD di `NotchMode`.
+- `cargo fmt --all -- --check` dan `cargo clippy --all-targets -- -D warnings` bersih.
+- HUD headphone 320 × 64 px dan charging 300 × 58 px dirender benar di build debug (screenshot smoke test); auto-hide 3 detik diverifikasi lewat unit test state machine.
+- Tray diuji dengan mem-posting `WM_COMMAND` ke `KriptonTrayWindow`: show/hide mengubah `IsWindowVisible` overlay (True → False → True), autostart menulis lalu menghapus nilai Run, Lyrics mengubah `state.json` `False → True`, Water goal menulis 2500, dan Quit mengakhiri proses tanpa zombie.
+- `cargo build --release` menghasilkan satu `target\release\kripton.exe`; exe rilis dijalankan dan notch/tray aktif.
+- Tidak ada perubahan pada mode Sprint 1–5; `cargo test` lama tetap lulus.
+
+**Known limitations:**
+
+- Mesin uji (VM) tidak punya jack headphone fisik atau charger yang bisa di-toggle, jadi HUD divisualkan lewat hook demo sementara (sudah dihapus sebelum commit) dan perilaku transisi diverifikasi lewat unit test, bukan colok/cabut nyata.
+- Charging memakai polling 250 ms, bukan `WM_POWERBROADCAST`; latensi maksimum ~250 ms sehingga masih memenuhi target < 300 ms.
+- Installer belum dikompilasi di lingkungan ini karena Inno Setup 6 tidak terpasang; script disediakan dan divalidasi secara manual. Belum ada code signing.
+- Deteksi headphone memakai form factor + heuristik nama; perangkat Bluetooth dengan nama eksotis bisa tidak terdeteksi.
+- Menu tray berbahasa Inggris mengikuti label UI yang sudah ada; dokumentasi tetap berbahasa Indonesia.
+- `feat/prd-v2` belum di-merge ke `main`; menunggu review.
 
 ---
 

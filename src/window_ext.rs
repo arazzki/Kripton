@@ -25,9 +25,9 @@ use windows::{
             Input::KeyboardAndMouse::SetFocus,
             WindowsAndMessaging::{
                 GetCursorPos, GetWindowLongPtrW, GetWindowRect, SetForegroundWindow,
-                SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE,
-                SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
-                WS_EX_TRANSPARENT,
+                SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_TOPMOST,
+                SWP_NOACTIVATE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNOACTIVATE,
+                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
             },
         },
     },
@@ -35,12 +35,15 @@ use windows::{
 
 use crate::{
     focus::{self, FocusPhase, FocusTimer},
+    headphone::HeadphoneWatcher,
+    hud::{self, HudContent, HudKind, HudState, PowerSnapshot},
     living::{Living, LivingFrame},
     media::{self, Artwork, MediaController},
     shelf::{self, ShelfManager, ShelfThumb},
     spring::{Spring, SpringConfig},
     state::{NotchMode, Page, TodoItem},
     todo,
+    tray::{TrayAction, TrayController},
     water::{self, WaterTracker},
     wave::AudioWave,
     AppWindow, ShelfView, TodoView,
@@ -53,6 +56,7 @@ pub const WAKE_STRIP_W: f32 = 200.0;
 pub const WAKE_STRIP_H: f32 = 6.0;
 const LIVING_EVERY: u64 = 3; // Living properties update at ~20 fps.
 const MEDIA_POLL_INTERVAL: Duration = Duration::from_millis(250);
+const POWER_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const COLLAPSE_REVEAL_WIDTH: f32 = 380.0;
 
 thread_local! {
@@ -162,6 +166,18 @@ impl OverlayWindow {
         self.hwnd
     }
 
+    /// Tray show/hide. Win32 `ShowWindow` is used instead of Slint's
+    /// `ComponentHandle::hide`, because Slint releases its event-loop keepalive
+    /// when the last window is hidden and the tray would stop working.
+    pub fn set_visible(&self, visible: bool) {
+        unsafe {
+            let _ = ShowWindow(self.hwnd, if visible { SW_SHOWNOACTIVATE } else { SW_HIDE });
+        }
+        if visible {
+            self.reposition();
+        }
+    }
+
     pub fn set_click_through(&self, enabled: bool) {
         unsafe {
             let current = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) as u32;
@@ -261,10 +277,8 @@ impl OverlayWindow {
 
 pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
     let (width, height) = mode.size();
-    let expanded = matches!(
-        mode,
-        NotchMode::Expanded | NotchMode::Lyrics | NotchMode::Hud
-    );
+    let expanded = matches!(mode, NotchMode::Expanded | NotchMode::Lyrics);
+    let hud = mode.is_hud();
     let stealth = matches!(mode, NotchMode::Stealth);
 
     MORPH.with(|morph| {
@@ -272,11 +286,18 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
         morph.width.set_target(width);
         morph.height.set_target(height);
 
-        if expanded {
+        if hud {
+            morph.pending_collapse = None;
+            app.set_stealth(false);
+            app.set_expanded(false);
+            app.set_closed(false);
+            app.set_hud_visible(true);
+        } else if expanded {
             morph.pending_collapse = None;
             app.set_stealth(false);
             app.set_expanded(true);
             app.set_closed(false);
+            app.set_hud_visible(false);
         } else if app.get_expanded() && morph.width.value() > COLLAPSE_REVEAL_WIDTH {
             // Keep the expanded shell visible until the black shape has shrunk
             // close to compact size, then swap content in the runtime tick.
@@ -287,6 +308,7 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
             app.set_expanded(false);
             let show_closed = matches!(mode, NotchMode::Closed | NotchMode::CompactHovered);
             app.set_closed(show_closed);
+            app.set_hud_visible(false);
         }
     });
 }
@@ -302,10 +324,22 @@ pub fn install_overlay(
     audio: AudioWave,
     shelf: ShelfManager,
     store: crate::state::StateStore,
+    tray: TrayController,
+    headphone: HeadphoneWatcher,
 ) {
-    try_attach(app.as_weak(), 0, media, Arc::new(audio), shelf, store);
+    try_attach(
+        app.as_weak(),
+        0,
+        media,
+        Arc::new(audio),
+        shelf,
+        store,
+        tray,
+        headphone,
+    );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn try_attach(
     app: Weak<AppWindow>,
     attempts: u32,
@@ -313,6 +347,8 @@ fn try_attach(
     audio: Arc<AudioWave>,
     shelf: ShelfManager,
     store: crate::state::StateStore,
+    tray: TrayController,
+    headphone: HeadphoneWatcher,
 ) {
     Timer::single_shot(Duration::from_millis(16), move || {
         let Some(app) = app.upgrade() else {
@@ -320,7 +356,7 @@ fn try_attach(
         };
 
         if let Some(overlay) = OverlayWindow::attach(&app) {
-            install_runtime(&app, overlay, media, audio, shelf, store);
+            install_runtime(&app, overlay, media, audio, shelf, store, tray, headphone);
         } else if attempts < 120 {
             try_attach(
                 app.as_weak(),
@@ -329,6 +365,8 @@ fn try_attach(
                 audio.clone(),
                 shelf.clone(),
                 store,
+                tray.clone(),
+                headphone.clone(),
             );
         } else {
             eprintln!("[Kripton] native window handle was not available after 2 seconds");
@@ -391,8 +429,15 @@ struct Runtime {
     todos: Vec<TodoItem>,
     todo_editing: bool,
     last_day_check: Instant,
+    headphone: HeadphoneWatcher,
+    tray: TrayController,
+    hud: HudState,
+    last_power_poll: Instant,
+    power: PowerSnapshot,
+    window_visible: bool,
 }
 
+#[allow(clippy::too_many_arguments)]
 fn install_runtime(
     app: &AppWindow,
     overlay: OverlayWindow,
@@ -400,6 +445,8 @@ fn install_runtime(
     audio: Arc<AudioWave>,
     shelf: ShelfManager,
     store: crate::state::StateStore,
+    tray: TrayController,
+    headphone: HeadphoneWatcher,
 ) {
     let weak = app.as_weak();
     let (focus_minutes, water_seed, todos) = store.with(|state| {
@@ -451,6 +498,12 @@ fn install_runtime(
         todos,
         todo_editing: false,
         last_day_check: Instant::now(),
+        headphone,
+        tray,
+        hud: HudState::new(),
+        last_power_poll: Instant::now(),
+        power: PowerSnapshot::from_battery(&crate::system::read_battery()),
+        window_visible: true,
     }));
 
     install_media_callbacks(app, &runtime);
@@ -489,6 +542,16 @@ fn install_runtime(
         let dt = (now - runtime.last_tick).as_secs_f32().clamp(0.001, 0.05);
         runtime.last_tick = now;
         runtime.ticks = runtime.ticks.wrapping_add(1);
+
+        // Tray actions are queued from the Win32 message thread; this is the
+        // only place that applies them, so Slint is never touched off-thread.
+        drain_tray_actions(&app, &mut runtime, overlay);
+        if !runtime.window_visible {
+            return;
+        }
+
+        // Headphone/charging HUDs and the 250 ms power probe.
+        update_hardware_hud(&app, &mut runtime, now);
 
         // Keep music state fresh even while the notch is collapsed: Closed
         // mode depends on it and hover-open must already show the right track.
@@ -544,6 +607,7 @@ fn install_runtime(
                     app.set_stealth(matches!(mode, NotchMode::Stealth));
                     let show_closed = matches!(mode, NotchMode::Closed | NotchMode::CompactHovered);
                     app.set_closed(show_closed);
+                    app.set_hud_visible(false);
                 }
             }
         });
@@ -556,7 +620,11 @@ fn install_runtime(
             runtime.click_through = should_click_through;
         }
 
-        if inside {
+        if runtime.hud.active() {
+            // A hardware HUD owns the notch for its 3 second lifetime. Hover
+            // must not collapse or expand it mid-animation.
+            runtime.left_at = None;
+        } else if inside {
             runtime.left_at = None;
             if HOVER_LOCKED_UNTIL_LEAVE.with(Cell::get) {
                 // User explicitly clicked to collapse; stay in compact mode until pointer leaves.
@@ -607,7 +675,7 @@ fn install_runtime(
             if frame.media_active != runtime.media_active {
                 runtime.media_active = frame.media_active;
                 MEDIA_ACTIVE.with(|active| active.set(frame.media_active));
-                if !app.get_expanded() {
+                if !app.get_expanded() && !runtime.hud.active() {
                     if overlay.cursor_inside_notch(&app) {
                         apply_mode(&app, NotchMode::CompactHovered);
                     } else {
@@ -621,6 +689,119 @@ fn install_runtime(
     // The overlay needs its runtime for the whole process lifetime. Leaking
     // this handle is intentional; dropping it would silently stop the loop.
     std::mem::forget(timer);
+}
+
+fn drain_tray_actions(app: &AppWindow, runtime: &mut Runtime, overlay: OverlayWindow) {
+    for action in runtime.tray.take_actions() {
+        match action {
+            TrayAction::ToggleVisibility => {
+                runtime.window_visible = !runtime.window_visible;
+                runtime.hud.dismiss();
+                overlay.set_visible(runtime.window_visible);
+                runtime.tray.set_visible(runtime.window_visible);
+                if runtime.window_visible {
+                    apply_mode(app, collapsed_mode());
+                }
+            }
+            TrayAction::SetAutostart(enabled) => {
+                if let Err(error) = crate::autostart::set_enabled(enabled) {
+                    crate::log_line(&format!("failed to update autostart: {error}"));
+                }
+            }
+            TrayAction::SetLyrics(enabled) => {
+                app.set_lyrics_enabled(enabled);
+                runtime.store.update(|state| state.lyrics_enabled = enabled);
+                runtime.tray.set_lyrics(enabled);
+                if app.get_expanded() && app.get_active_page() == 0 {
+                    apply_mode(
+                        app,
+                        if enabled {
+                            NotchMode::Lyrics
+                        } else {
+                            NotchMode::Expanded
+                        },
+                    );
+                }
+            }
+            TrayAction::SetWaterGoal(goal) => {
+                runtime.water.set_goal_ml(goal);
+                runtime
+                    .store
+                    .update(|state| state.water_tracker.daily_goal_ml = goal);
+                runtime.tray.set_water_goal(goal);
+                sync_water_ui(app, runtime);
+            }
+            TrayAction::Quit => {
+                runtime.tray.shutdown();
+                let _ = runtime.store.save();
+                let _ = slint::quit_event_loop();
+            }
+        }
+    }
+}
+
+fn update_hardware_hud(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
+    // If the user clicked or expanded during the HUD lifetime, `apply_mode`
+    // already cleared the visible flag. Drop the timer so it cannot override
+    // the user's new mode.
+    if runtime.hud.active() && !app.get_hud_visible() {
+        runtime.hud.dismiss();
+    }
+
+    if let Some(mode) = runtime.hud.expire(now) {
+        apply_mode(app, mode);
+    }
+
+    if now.duration_since(runtime.last_power_poll) >= POWER_POLL_INTERVAL {
+        runtime.last_power_poll = now;
+        let status = crate::system::read_battery();
+        crate::apply_battery(app, status);
+        let next = PowerSnapshot::from_battery(&status);
+        if let Some(content) = hud::charging_hud_event(runtime.power, next) {
+            show_hud(app, runtime, content, now);
+        }
+        runtime.power = next;
+    }
+
+    if let Some(content) = runtime.headphone.take() {
+        show_hud(app, runtime, content, now);
+    }
+}
+
+fn show_hud(app: &AppWindow, runtime: &mut Runtime, content: HudContent, now: Instant) {
+    let return_mode = if app.get_expanded() {
+        if app.get_active_page() == 0 && app.get_lyrics_enabled() {
+            NotchMode::Lyrics
+        } else {
+            NotchMode::Expanded
+        }
+    } else if app.get_stealth() {
+        NotchMode::Stealth
+    } else if app.get_closed() {
+        NotchMode::Closed
+    } else {
+        NotchMode::CompactHovered
+    };
+
+    let kind = content.kind;
+    apply_hud_ui(app, &content);
+    runtime.hud.show(content, now, return_mode);
+    apply_mode(
+        app,
+        match kind {
+            HudKind::Headphone => NotchMode::DeviceHud,
+            HudKind::Charging => NotchMode::ChargingHud,
+        },
+    );
+}
+
+fn apply_hud_ui(app: &AppWindow, content: &HudContent) {
+    app.set_hud_device(matches!(content.kind, HudKind::Headphone));
+    app.set_hud_title(content.title.clone().into());
+    app.set_hud_status(content.status.clone().into());
+    app.set_hud_connected(content.connected);
+    app.set_hud_charging(content.charging);
+    app.set_hud_percent_text(format!("{}%", content.percent).into());
 }
 
 fn install_media_callbacks(app: &AppWindow, runtime: &Rc<RefCell<Runtime>>) {

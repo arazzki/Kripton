@@ -138,6 +138,15 @@ export component AppWindow inherits Window {
     in-out property <string> todo-draft: "";
     in-out property <bool> todo-edit-active: false;
 
+    // Hardware HUDs (Sprint 6).
+    in property <bool> hud-visible: false;
+    in property <bool> hud-device: true;
+    in property <string> hud-title: "";
+    in property <string> hud-status: "Connected";
+    in property <bool> hud-connected: true;
+    in property <bool> hud-charging: false;
+    in property <string> hud-percent-text: "100%";
+
     callback toggle-expand();
     callback page-selected(int);
     callback quit();
@@ -284,7 +293,7 @@ export component AppWindow inherits Window {
         }
 
         // --- Collapsed Notch Content (Stealth & Compact Pill) ---------------
-        if !root.expanded: Rectangle {
+        if !root.expanded && !root.hud-visible: Rectangle {
             width: parent.width;
             height: parent.height;
             background: transparent;
@@ -3015,6 +3024,254 @@ export component AppWindow inherits Window {
                             }
                         }
                     }
+                }
+            }
+        }
+
+        // --- Hardware HUD (Sprint 6) --------------------------------------
+        if root.hud-visible: Rectangle {
+            width: parent.width;
+            height: parent.height;
+            background: transparent;
+
+            Rectangle {
+                x: 18px;
+                y: parent.height - 16px;
+                width: parent.width - 36px;
+                height: 16px;
+                background: @radial-gradient(circle, #00F0FF55 0%, transparent 84%);
+                opacity: root.hud-device ? 1.0 : 0.0;
+            }
+            Rectangle {
+                x: 18px;
+                y: parent.height - 16px;
+                width: parent.width - 36px;
+                height: 16px;
+                background: @radial-gradient(circle, #34D39955 0%, transparent 84%);
+                opacity: root.hud-device ? 0.0 : 1.0;
+            }
+
+            HorizontalLayout {
+                padding-left: 14px;
+                padding-right: 14px;
+                padding-top: 9px;
+                padding-bottom: 9px;
+                spacing: 11px;
+
+                Rectangle {
+                    width: 40px;
+                    height: 40px;
+                    border-radius: 20px;
+                    background: root.hud-device ? #00F0FF14 : #34D39914;
+                    border-width: 1px;
+                    border-color: root.hud-device ? #00F0FF38 : #34D39938;
+
+                    if root.hud-device: Rectangle {
+                        width: 26px;
+                        height: 26px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        background: transparent;
+
+                        Path {
+                            width: 26px;
+                            height: 26px;
+                            viewbox-width: 26;
+                            viewbox-height: 26;
+                            stroke: #00F0FF;
+                            stroke-width: 2.2px;
+                            fill: transparent;
+
+                            MoveTo {
+                                x: 4;
+                                y: 15;
+                            }
+                            LineTo {
+                                x: 4;
+                                y: 12;
+                            }
+                            ArcTo {
+                                radius-x: 9;
+                                radius-y: 9;
+                                sweep: true;
+                                x: 22;
+                                y: 12;
+                            }
+                            LineTo {
+                                x: 22;
+                                y: 15;
+                            }
+                        }
+
+                        Rectangle {
+                            x: 2px;
+                            y: 14px;
+                            width: 6px;
+                            height: 9px;
+                            border-radius: 3px;
+                            background: #00F0FF;
+                        }
+                        Rectangle {
+                            x: 18px;
+                            y: 14px;
+                            width: 6px;
+                            height: 9px;
+                            border-radius: 3px;
+                            background: #00F0FF;
+                        }
+                    }
+
+                    if !root.hud-device: Rectangle {
+                        width: 24px;
+                        height: 24px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        background: transparent;
+
+                        Path {
+                            width: 24px;
+                            height: 24px;
+                            viewbox-width: 24;
+                            viewbox-height: 24;
+                            fill: #FACC15;
+
+                            MoveTo {
+                                x: 13;
+                                y: 1;
+                            }
+                            LineTo {
+                                x: 4;
+                                y: 14;
+                            }
+                            LineTo {
+                                x: 10;
+                                y: 14;
+                            }
+                            LineTo {
+                                x: 8;
+                                y: 23;
+                            }
+                            LineTo {
+                                x: 20;
+                                y: 9;
+                            }
+                            LineTo {
+                                x: 13;
+                                y: 9;
+                            }
+                            Close {}
+                        }
+                    }
+                }
+
+                VerticalLayout {
+                    alignment: center;
+                    spacing: 1px;
+
+                    Text {
+                        text: root.hud-title;
+                        color: #FFFFFF;
+                        font-size: 13px;
+                        font-weight: 700;
+                        overflow: TextOverflow.elide;
+                    }
+
+                    HorizontalLayout {
+                        spacing: 5px;
+
+                        Rectangle {
+                            width: 5px;
+                            height: 5px;
+                            border-radius: 2.5px;
+                            background: root.hud-device ? (root.hud-connected ? #34D399 : #F59E0B) : #34D399;
+                        }
+
+                        Text {
+                            text: root.hud-status;
+                            color: root.hud-device ? (root.hud-connected ? #34D399 : #F59E0B) : #34D399;
+                            font-size: 9.5px;
+                            font-weight: 600;
+                        }
+                    }
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: transparent;
+                }
+
+                if root.hud-device: HorizontalLayout {
+                    spacing: 3px;
+                    alignment: center;
+
+                    Rectangle {
+                        width: 3px;
+                        height: 26px;
+                        background: transparent;
+                        Rectangle {
+                            width: 3px;
+                            height: 5px + root.wave-0 * 19px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1.5px;
+                            background: #00F0FF;
+                        }
+                    }
+                    Rectangle {
+                        width: 3px;
+                        height: 26px;
+                        background: transparent;
+                        Rectangle {
+                            width: 3px;
+                            height: 5px + root.wave-1 * 19px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1.5px;
+                            background: #00F0FF;
+                        }
+                    }
+                    Rectangle {
+                        width: 3px;
+                        height: 26px;
+                        background: transparent;
+                        Rectangle {
+                            width: 3px;
+                            height: 5px + root.wave-2 * 19px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1.5px;
+                            background: #00F0FF;
+                        }
+                    }
+                    Rectangle {
+                        width: 3px;
+                        height: 26px;
+                        background: transparent;
+                        Rectangle {
+                            width: 3px;
+                            height: 5px + root.wave-3 * 19px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1.5px;
+                            background: #00F0FF;
+                        }
+                    }
+                    Rectangle {
+                        width: 3px;
+                        height: 26px;
+                        background: transparent;
+                        Rectangle {
+                            width: 3px;
+                            height: 5px + root.wave-4 * 19px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 1.5px;
+                            background: #00F0FF;
+                        }
+                    }
+                }
+
+                if !root.hud-device: Text {
+                    text: root.hud-percent-text;
+                    color: #34D399;
+                    font-size: 20px;
+                    font-weight: 800;
+                    vertical-alignment: center;
                 }
             }
         }

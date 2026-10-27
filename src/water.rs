@@ -33,6 +33,10 @@ impl WaterTracker {
         self.goal_ml
     }
 
+    pub fn set_goal_ml(&mut self, goal_ml: u32) {
+        self.goal_ml = goal_ml.max(1);
+    }
+
     pub fn last_drink(&self) -> i64 {
         self.last_drink
     }
@@ -133,6 +137,16 @@ mod tests {
         water.add(5000, 10);
         assert_eq!(water.progress(), 1.0);
         assert_eq!(water.percent_text(), "100%");
+    }
+
+    #[test]
+    fn goal_can_be_changed_from_settings() {
+        let mut water = WaterTracker::new(1000, 2000, 0);
+        water.set_goal_ml(2500);
+        assert_eq!(water.goal_ml(), 2500);
+        assert_eq!(water.summary_text(), "1,000 / 2,500 ml");
+        water.set_goal_ml(0);
+        assert_eq!(water.goal_ml(), 1);
     }
 
     #[test]

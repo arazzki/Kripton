@@ -4,7 +4,7 @@
 
 Dibangun **100% dengan Rust + Slint**. Tidak ada Electron, WebView2, browser scraping, Discord RPC, skrip eksternal, atau database eksternal.
 
-> Status: **Sprint 5 — Productivity selesai**. Shell notch, Idle/Closed, halaman **Music** (WinRT SMTC + live wave FFT WASAPI), **Lyrics** (LRCLIB, lirik sinkron 580 px), **Shelf** (OLE drop target, carousel file/folder), **Focus** (Pomodoro + chime), **Water** (gelombang + pengingat), dan **To-do** (checklist + drag reorder) sudah berjalan. Berikutnya Sprint 6: HUD headphone/charging, tray, dan release (lihat [`SPRINTS.md`](SPRINTS.md)).
+> Status: **Sprint 6 — Hardware HUD + Tray + Release selesai (v1.0.0)**. Shell notch, Idle/Closed, halaman **Music** (WinRT SMTC + live wave FFT WASAPI), **Lyrics** (LRCLIB, lirik sinkron 580 px), **Shelf** (OLE drop target, carousel file/folder), **Focus** (Pomodoro + chime), **Water** (gelombang + pengingat), **To-do** (checklist + drag reorder), **HUD headphone/charging**, dan **tray icon** sudah berjalan. Paket rilis memakai profil LTO dan script installer Inno Setup (lihat [`SPRINTS.md`](SPRINTS.md)).
 
 ![Kripton — concept art](assets/plasma_core_concept.png)
 
@@ -35,8 +35,8 @@ Palet: hitam pekat `#000000`, icy cyan `#00F0FF`, emerald `#10B981`, krypton vio
 - [x] **Focus** — Pomodoro 25/5, preset 15/25/45/60, ring progres, chime in-memory, sesi harian.
 - [x] **Water** — target 2.000 ml, +150/+250/+500, Undo, gelombang cairan, pengingat 90 menit.
 - [x] **To-do** — input inline, checklist, strikethrough, hapus, drag reorder, persistensi.
-- [ ] **HUD** — headphone connect & charging pop-up 3 detik.
-- [ ] **System** — tray icon, autostart, single instance, installer.
+- [x] **HUD** — headphone connect/disconnect 320 × 64 px dan charging 300 × 58 px, auto-hide 3 detik.
+- [x] **System** — tray icon (show/hide, autostart, lyrics, water goal, quit), single instance, installer 1.0.0.
 
 ---
 
@@ -55,11 +55,18 @@ src/
 ├── focus.rs          # Pomodoro monotonic (GetTickCount64), fase 25/5, chime in-memory
 ├── water.rs          # tracker hidrasi harian, undo, format ribuan, nudge 90 menit
 ├── todo.rs           # checklist CRUD, reorder, ID stabil
+├── hud.rs            # state machine HUD 3 detik + ambang charging
+├── headphone.rs      # IMMNotificationClient MTA: endpoint default → HUD
+├── tray.rs           # Shell_NotifyIconW, menu, antrean aksi ke UI thread
+├── autostart.rs      # HKCU Run key read/write/remove
 ├── wave.rs           # WASAPI loopback + FFT radix-2 512 → 5 pita, atomik
 └── window_ext.rs     # Win32 overlay, hover, runtime 60 fps, playback clock, callbacks
 
 ui/
-└── appwindow.slint   # shell notch, idle/closed/expanded, Music/Lyrics/Shelf/Focus/Water/To-do
+└── appwindow.slint   # shell notch, idle/closed/expanded, Music/Lyrics/Shelf/Focus/Water/To-do, HUD
+
+installer/
+└── kripton.iss       # Inno Setup 6, per-user, autostart task opsional
 
 assets/
 ├── icon.ico            # ikon executable
@@ -81,6 +88,9 @@ tools/
 - Animasi maskot dibatasi **~20 fps** (bukan vsync 60 fps) supaya CPU idle tetap rendah; morph shell tetap berjalan tiap tick timer 16 ms.
 - **SMTC** berjalan di worker MTA sendiri; UI thread tidak pernah memblokir COM. Polling 300 ms, artwork didekode di worker lalu dijadikan tekstur di UI thread.
 - **Audio** dibaca dari loopback default endpoint pada worker MTA; FFT 512 titik dijalankan ~30 Hz dan hasilnya dipublikasikan lewat atomik, sehingga render tidak menunggu audio.
+- **HUD hardware** memakai state machine murni (`src/hud.rs`) dengan batas 3 detik. Perubahan endpoint audio datang dari callback `IMMNotificationClient` di thread MTA terpisah dan hanya menulis snapshot; UI tick yang menampilkan HUD, sehingga audio stack tidak pernah memblokir render.
+- **Tray** memakai hidden message window + `Shell_NotifyIconW` karena Slint 1.18 belum punya API tray. Menu hanya mengantre aksi; UI thread yang menerapkannya, jadi tidak ada panggilan Slint dari thread lain. Show/hide memakai `ShowWindow` pada HWND overlay agar keepalive event loop tetap hidup.
+- **Charging** dipantau dengan `GetSystemPowerStatus` tiap 250 ms di tick runtime. Winit tidak mengekspos `WM_POWERBROADCAST` mentah, jadi polling ini menggantikan listener pesan power dengan latensi di bawah 300 ms.
 
 > Renderer: **FemtoVG**. Renderer Skia/Direct3D milik Slint saat ini merender area transparan sebagai hitam di Windows, sehingga FemtoVG dipakai untuk alpha yang benar.
 
@@ -106,14 +116,24 @@ Build pertama mengompilasi Slint dan cukup berat. Jika RAM terbatas, batasi para
 cargo build -j 1
 ```
 
-Build rilis:
+Build rilis (LTO fat, `codegen-units = 1`, strip, `panic = "abort"`):
 
 ```powershell
 cargo build --release
-# hasil: target\release\kripton.exe
+# hasil: target\release\kripton.exe (satu file, tanpa runtime tambahan)
 ```
 
-## Kontrol (Sprint 5)
+Installer per-user (tanpa UAC) memakai Inno Setup 6:
+
+```powershell
+cargo build --release
+& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\kripton.iss
+# hasil: dist\Kripton-1.0.0-setup.exe
+```
+
+Installer menyalin `kripton.exe`, `README.md`, dan `LICENSE` ke `%LOCALAPPDATA%\Programs\Kripton`, membuat shortcut Start Menu, dan menyediakan task opsional **Start Kripton with Windows** yang menulis nilai `Kripton` yang sama dengan toggle tray. Uninstall menghapus nilai Run tersebut, tetapi membiarkan `%APPDATA%\Kripton\state.json` agar data pengguna tidak hilang saat reinstall.
+
+## Kontrol (Sprint 6)
 
 | Aksi | Hasil |
 | --- | --- |
@@ -139,10 +159,18 @@ cargo build --release
 | To-do: klik checkbox | Menandai selesai (strikethrough `#6B7280`) |
 | To-do: drag baris | Memindahkan urutan task; urutan disimpan ke `state.json` |
 | To-do: klik ikon hapus / `Clear done` | Menghapus satu task atau semua task selesai |
+| Headphone dicolok/dilepas atau jadi endpoint default | HUD 320 × 64 px: nama perangkat + `Connected`/`Disconnected` hijau/amber, auto-hide 3 detik |
+| Charger dicolok/dilepas, baterai ≤ 20%, atau penuh | HUD 300 × 58 px: status + persen, auto-hide 3 detik |
+| Klik ikon tray (kiri, double-click) | Show/hide notch tanpa mematikan proses |
+| Klik kanan ikon tray | Menu: Show/Hide, Start with Windows, Lyrics, Water goal, Quit |
+| Tray → `Start with Windows` | Menulis/menghapus `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Kripton` |
+| Tray → `Lyrics` | Menyalakan/mematikan lirik dan menyimpannya ke `state.json` |
+| Tray → `Water goal` | Memilih target 1.500/2.000/2.500/3.000 ml dan menyimpannya |
+| Tray → `Quit Kripton` | Menghapus ikon tray, menyimpan state, lalu keluar tanpa proses zombie |
 | Jauhkan kursor (250 ms) | Notch mengecil kembali ke Idle/Closed |
 | Klik notch | Toggle expand/collapse |
 | Klik titik pagination | Pindah halaman (Music/Focus/Water/Shelf/To-do) |
-| Klik kanan notch | Keluar dari aplikasi (sementara, sampai tray hadir) |
+| Klik kanan notch | Keluar dari aplikasi (shortcut cepat selain tray) |
 | Klik di luar notch | Diteruskan ke aplikasi di bawahnya (click-through) |
 
 Hanya satu instance yang boleh berjalan; instance kedua langsung keluar. Set `KRIPTON_AUDIO_DEBUG=1` untuk menulis level FFT tiap 2 detik ke `kripton.log`.
@@ -161,7 +189,32 @@ Log ringan (rotasi manual, tanpa telemetri):
 %APPDATA%\Kripton\kripton.log
 ```
 
-State ditulis lewat file sementara lalu `rename`, dan state korup dikarantina menjadi `state.corrupt-YYYYMMDD-HHMMSS.json`. Tidak ada data yang dikirim ke mana pun saat ini. Metadata musik dibaca lokal lewat SMTC, audio dianalisis lokal lewat loopback, dan artwork tidak pernah diunggah. Timer fokus, asupan air, dan daftar to-do hanya tersimpan di `state.json` lokal. Nanti, lirik hanya memanggil LRCLIB secara langsung saat mode Lyrics aktif; tidak ada analytics.
+State ditulis lewat file sementara lalu `rename`, dan state korup dikarantina menjadi `state.corrupt-YYYYMMDD-HHMMSS.json`. Tidak ada data yang dikirim ke mana pun saat ini. Metadata musik dibaca lokal lewat SMTC, audio dianalisis lokal lewat loopback, dan artwork tidak pernah diunggah. Timer fokus, asupan air, dan daftar to-do hanya tersimpan di `state.json` lokal. Lirik hanya memanggil LRCLIB secara langsung saat mode Lyrics aktif; tidak ada analytics.
+
+Autostart bersifat opt-in dan hanya menulis satu nilai per-user:
+
+```
+HKCU\Software\Microsoft\Windows\CurrentVersion\Run
+  Kripton = "<path>\kripton.exe"
+```
+
+Tidak ada scheduled task, service, atau perubahan machine-wide. Menghapus centang `Start with Windows` (atau uninstall) langsung menghapus nilai tersebut.
+
+## Troubleshooting
+
+| Gejala | Penyebab & solusi |
+| --- | --- |
+| Ikon tray tidak muncul | Explorer mungkin baru restart. Kripton mendengarkan pesan `TaskbarCreated` dan menambahkan ikon lagi otomatis; kalau tetap tidak ada, quit lewat klik kanan notch lalu jalankan ulang. |
+| Tray → `Show Kripton` tidak memunculkan notch | Notch mungkin sudah terlihat tetapi berada di monitor utama. Kripton selalu menempel di tengah atas monitor primary; cek juga `kripton.log`. |
+| HUD headphone tidak muncul | HUD hanya bereaksi pada endpoint yang terdeteksi headphone/headset (form factor 3/5 atau nama yang mengandung headphone/headset/earbud/AirPods/Buds). Speaker, HDMI, dan SPDIF sengaja diabaikan. Pastikan perangkat menjadi **default playback device**. |
+| HUD charging tidak muncul | Transisi hanya dipicu saat status AC/charging berubah, baterai turun melewati 20%, atau mencapai penuh. Mesin tanpa baterai tidak menampilkan HUD charging. |
+| Autostart tidak berjalan setelah login | Buka Task Manager → Startup dan pastikan `Kripton` tidak di-disable. Windows juga bisa menunda startup beberapa detik. |
+| Aplikasi tidak mau start / langsung keluar | Hanya satu instance yang diizinkan. Cek Task Manager untuk `kripton.exe` lama, atau lihat `%APPDATA%\Kripton\kripton.log`. |
+| Notch terlihat hitam di area transparan | Pastikan memakai build resmi (FemtoVG). Renderer lain tidak dipakai karena alpha Windows. |
+| Build release gagal karena file terkunci | Hentikan `kripton.exe` yang sedang berjalan sebelum `cargo build --release`. |
+| Installer tidak bisa dikompilasi | Script membutuhkan **Inno Setup 6** (`ISCC.exe`). Jalankan `cargo build --release` lebih dulu agar `target\release\kripton.exe` ada. |
+
+Log dan state bisa dihapus kapan saja saat Kripton tidak berjalan; aplikasi akan membuatnya ulang dengan default.
 
 ## Aset
 
@@ -181,7 +234,7 @@ cargo clippy --all-targets -- -D warnings
 cargo test
 ```
 
-CI Windows berjalan untuk fmt, clippy, dan test pada setiap push (`.github/workflows/ci.yml`).
+Saat ini **60 unit test** mencakup state machine, parsing, geometri, HUD, autostart, dan tracker. CI Windows berjalan untuk fmt, clippy, dan test pada setiap push (`.github/workflows/ci.yml`).
 
 ## Lisensi
 
