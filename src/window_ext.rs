@@ -858,6 +858,13 @@ fn install_media_callbacks(app: &AppWindow, runtime: &Rc<RefCell<Runtime>>) {
     app.on_lyrics_toggle(move || {
         if let Some(app) = weak_lyrics.upgrade() {
             let new_state = !app.get_lyrics_enabled();
+            app.set_page_fade(0.0);
+            let weak_fade = app.as_weak();
+            Timer::single_shot(Duration::from_millis(20), move || {
+                if let Some(app) = weak_fade.upgrade() {
+                    app.set_page_fade(1.0);
+                }
+            });
             app.set_lyrics_enabled(new_state);
             runtime_lyrics
                 .borrow()
@@ -933,6 +940,13 @@ fn install_shelf_callbacks(app: &AppWindow, runtime: &Rc<RefCell<Runtime>>) {
 fn open_shelf_page(app: &AppWindow, runtime: &mut Runtime) {
     let page = Page::Shelf;
     if app.get_active_page() != page.index() as i32 {
+        app.set_page_fade(0.0);
+        let weak_fade = app.as_weak();
+        Timer::single_shot(Duration::from_millis(20), move || {
+            if let Some(app) = weak_fade.upgrade() {
+                app.set_page_fade(1.0);
+            }
+        });
         app.set_active_page(page.index() as i32);
         app.set_page_title(page.title().into());
         app.set_page_subtitle(page.subtitle().into());
@@ -1001,7 +1015,7 @@ fn shelf_thumb_image(thumb: &ShelfThumb) -> slint::Image {
     slint::Image::from_rgba8(buffer)
 }
 
-const TODO_ROW_HEIGHT: f32 = 24.0;
+const TODO_ROW_HEIGHT: f32 = 26.0;
 const FOCUS_CELEBRATE: Duration = Duration::from_secs(3);
 
 fn install_productivity_callbacks(

@@ -114,6 +114,16 @@ fn wire_callbacks(app: &AppWindow, store: &StateStore, tray: tray::TrayControlle
         store_for_page.update(|state| state.active_page = page.index());
 
         if let Some(app) = weak_for_page.upgrade() {
+            let changed = app.get_active_page() != page.index() as i32;
+            if changed {
+                app.set_page_fade(0.0);
+                let weak_fade = app.as_weak();
+                Timer::single_shot(Duration::from_millis(20), move || {
+                    if let Some(app) = weak_fade.upgrade() {
+                        app.set_page_fade(1.0);
+                    }
+                });
+            }
             app.set_active_page(page.index() as i32);
             app.set_page_title(page.title().into());
             app.set_page_subtitle(page.subtitle().into());

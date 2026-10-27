@@ -86,8 +86,8 @@ impl NotchMode {
             NotchMode::Idle => (336.0, 34.0),
             NotchMode::CompactHovered => (360.0, 36.0),
             NotchMode::Closed => (336.0, 34.0),
-            NotchMode::Expanded => (580.0, 192.0),
-            NotchMode::Lyrics => (580.0, 192.0),
+            NotchMode::Expanded => (580.0, 224.0),
+            NotchMode::Lyrics => (580.0, 224.0),
             NotchMode::DeviceHud => crate::hud::HEADPHONE_SIZE,
             NotchMode::ChargingHud => crate::hud::CHARGING_SIZE,
         }
@@ -330,8 +330,8 @@ mod tests {
         assert_eq!(NotchMode::Idle.size(), (336.0, 34.0));
         assert_eq!(NotchMode::CompactHovered.size(), (360.0, 36.0));
         assert_eq!(NotchMode::Closed.size(), (336.0, 34.0));
-        assert_eq!(NotchMode::Expanded.size(), (580.0, 192.0));
-        assert_eq!(NotchMode::Lyrics.size(), (580.0, 192.0));
+        assert_eq!(NotchMode::Expanded.size(), (580.0, 224.0));
+        assert_eq!(NotchMode::Lyrics.size(), (580.0, 224.0));
         assert_eq!(NotchMode::DeviceHud.size(), (320.0, 64.0));
         assert_eq!(NotchMode::ChargingHud.size(), (300.0, 58.0));
         assert!(NotchMode::DeviceHud.is_hud());
