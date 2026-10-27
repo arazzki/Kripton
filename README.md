@@ -1,6 +1,6 @@
 # Kripton
 
-**Living notch untuk Windows.** Kripton adalah aplikasi desktop native yang menempel di tepi atas layar, tepat di tengah, dan berubah bentuk seperti *notch* macOS: orb plasma yang bernapas saat idle, kontrol musik, lirik sinkron, timer fokus, pelacak air, rak file, to-do, serta HUD headphone dan baterai.
+**Living notch untuk Windows.** Terinspirasi oleh **Nusa**, Kripton adalah aplikasi desktop native yang menempel di tepi atas layar, tepat di tengah, dan berubah bentuk seperti *notch* macOS: orb plasma yang bernapas saat idle, kontrol musik, lirik sinkron, timer fokus, pelacak air, rak file, to-do, serta HUD headphone dan baterai.
 
 Dibangun **100% dengan Rust + Slint**. Tidak ada Electron, WebView2, browser scraping, Discord RPC, skrip eksternal, atau database eksternal.
 
@@ -235,6 +235,10 @@ cargo test
 ```
 
 Saat ini **60 unit test** mencakup state machine, parsing, geometri, HUD, autostart, dan tracker. CI Windows berjalan untuk fmt, clippy, dan test pada setiap push (`.github/workflows/ci.yml`).
+
+## Inspirasi & Kredit
+
+Kripton terinspirasi oleh konsep dan desain **Nusa**, membawa pengalaman *living notch* yang dinamis, interaktif, dan mulus ke Windows dengan implementasi 100% native Rust + Slint.
 
 ## Lisensi
 
