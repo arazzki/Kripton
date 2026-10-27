@@ -164,11 +164,6 @@ impl PersistedState {
         Page::from_index(self.active_page)
     }
 
-    #[allow(dead_code)] // Consumed by the to-do page in Sprint 5.
-    pub fn next_todo_id(&self) -> u64 {
-        self.todos.iter().map(|todo| todo.id).max().unwrap_or(0) + 1
-    }
-
     /// Reset per-day counters when the local date changes. Returns true when the
     /// state was modified and should be written back to disk.
     fn normalize_for_today(&mut self) -> bool {
@@ -254,6 +249,19 @@ impl StateStore {
             eprintln!("[Kripton] failed to save state.json: {error}");
         }
         result
+    }
+
+    /// Re-checks the local date while the app is running. The focus and water
+    /// counters roll over at midnight even if the process never restarts.
+    pub fn roll_over_day(&self) -> bool {
+        let today = Local::now().format("%Y-%m-%d").to_string();
+        let stale = self.with(|state| {
+            state.focus_timer.last_session_date != today || state.water_tracker.date != today
+        });
+        if !stale {
+            return false;
+        }
+        self.update(|state| state.normalize_for_today())
     }
 
     pub fn save(&self) -> std::io::Result<()> {

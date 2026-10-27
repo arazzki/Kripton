@@ -162,24 +162,36 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 
 ---
 
-## Sprint 5 — Productivity
+## Sprint 5 — Productivity ✅
 
 **Tujuan:** Focus timer, Water tracker, dan To-do yang benar-benar bisa dipakai.
 
-**Deliverables:**
+**Selesai:**
 
-1. **Focus** — Pomodoro 25/5, mulai/pause/reset, ring progres, chime `chime.wav`, hitung sesi harian.
-2. **Water** — target 2000 ml, tombol +250 ml, visual gelombang cairan, progress harian, reset tengah malam, pengingat interval.
-3. **To-do** — tambah lewat input inline, checklist, strikethrough `#6B7280`, hapus, reorder drag, ID stabil.
-4. Persistensi dan normalisasi harian untuk semua counter.
-5. Notifikasi Windows native (tanpa toast library eksternal) atau HUD in-notch bila notifikasi dimatikan.
+1. **Focus** — `src/focus.rs` menyediakan Pomodoro 25/5 dengan preset 15/25/45/60 dan tombol ±5 menit, start/pause/reset, ring progres 88 px, dan hitungan sesi harian. Countdown di-anchor ke `GetTickCount64`, jadi tetap akurat saat notch tertutup dan langsung melompat ke sisa waktu yang benar setelah PC sleep. Fase yang selesai berpindah ke fase berikutnya dalam keadaan pause; `focus-session` menampilkan `Focus Session #n` atau `Short Break`.
+2. **Chime** — `assets/chime.wav` di-embed lewat `include_bytes!` ke static 4-byte aligned dan diputar sekali per fase selesai dengan `PlaySoundW(SND_MEMORY | SND_ASYNC | SND_NODEFAULT)`. Tidak ada file eksternal, crate audio, atau toast library.
+3. **HUD in-notch** — penyelesaian fase menyalakan `focus-celebrate` selama 3 detik (pulse plasma + ring) dan pill compact tetap menampilkan chip waktu fokus. Ini menjadi fallback pengganti notifikasi Windows native.
+4. **Water** — `src/water.rs` menyimpan target 2.000 ml, tombol +150/+250/+500 ml, Undo satu gelas terakhir, ringkasan `1,250 / 2,000 ml` + persen, tank gelombang animasi (`water-phase`), dan pesan `Time for a glass of water` setelah 90 menit tanpa minum (hanya bila target belum tercapai).
+5. **Reset harian** — `normalize_for_today` di `state.rs` mereset counter fokus dan air saat tanggal lokal berubah. Runtime memeriksa rollover tiap 60 detik dan saat startup lewat `StateStore::roll_over_day`.
+6. **To-do** — `src/todo.rs` menangani tambah lewat input inline (`TextInput`, Enter), checkbox bulat, strikethrough `#6B7280`, tombol hapus, `Clear done`, dan drag reorder. `todo-reorder` menghitung `round(dy / 24px)` baris; ID baru memakai `max(id) + 1` sehingga tidak bentrok setelah penghapusan.
+7. **Fokus input inline** — `OverlayWindow::set_activatable` melepas `WS_EX_NOACTIVATE` lalu memanggil `SetForegroundWindow`/`SetFocus` saat input aktif, dan mengembalikan semuanya saat blur, pindah halaman, atau collapse. Mengetik tidak menutup notch dan hover tetap aman.
+8. **Persistensi** — `state.json` menyimpan `focus_timer`, `water_tracker`, dan `todos`; setiap perubahan (preset, air, add/toggle/remove/reorder) langsung ditulis.
 
-**Acceptance:**
+**Acceptance terverifikasi:**
 
-- Timer tetap akurat saat notch tertutup dan saat PC sleep (koreksi waktu monotonic).
-- Water reset tepat saat tanggal lokal berubah.
-- To-do bertahan setelah restart; input tidak kehilangan fokus saat hover.
-- Chime hanya berbunyi sekali per sesi selesai.
+- 46 unit test lulus 100% (`cargo test`), termasuk 13 test baru: countdown/clamp/pause/complete fokus, format ribuan + undo + nudge air, serta CRUD/reorder/ID to-do.
+- `cargo fmt --all -- --check` dan `cargo clippy --all-targets -- -D warnings` bersih.
+- Smoke test: Focus idle/running/complete (pindah ke `Short Break`, `1 done today`, ring `05:00`), pill compact menampilkan `24:55`, Water 25%/63% dengan gelombang dan nudge biru, To-do `1 / 3 done` dengan strikethrough dan input `Add a task...`.
+- `completed_sessions_today` bertambah tepat satu setelah sesi selesai dan tertulis ke `state.json`.
+- Rollover air memakai tanggal lokal (`today_key`); `last_drink_timestamp` memakai Unix detik yang sama dengan `unix_now`.
+
+**Known limitations:**
+
+- HUD penyelesaian memakai pulse in-notch, bukan toast Windows native; notifikasi sistem tetap kandidat Sprint 6.
+- Chime berbunyi di akhir sesi Focus maupun akhir break (sekali per fase), bukan hanya sesi fokus.
+- Reorder to-do berbasis delta piksel per baris 24 px; belum ada auto-scroll saat menyeret ke tepi daftar.
+- Durasi istirahat dan target air belum bisa diubah dari UI (target tetap 2.000 ml); settings menyusul di Sprint 6.
+- Undo air mengembalikan volume tetapi tidak memundurkan `last_drink_timestamp`.
 
 ---
 

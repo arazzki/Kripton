@@ -12,6 +12,12 @@ export struct ShelfView {
     index: int,
 }
 
+export struct TodoView {
+    id: int,
+    text: string,
+    completed: bool,
+}
+
 export component AppWindow inherits Window {
     title: "Kripton";
     width: 680px;
@@ -104,6 +110,34 @@ export component AppWindow inherits Window {
     in property <float> shelf-fade: 1.0;
     in property <string> shelf-summary: "Shelf is empty";
 
+    // Focus page (Sprint 5).
+    in property <int> focus-minutes: 25;
+    in property <string> focus-remaining: "25:00";
+    in property <float> focus-progress: 0.0;
+    in property <bool> focus-running: false;
+    in property <bool> focus-active: false;
+    in property <bool> focus-celebrate: false;
+    in property <string> focus-session: "Focus Session #1";
+    in property <int> focus-completed: 0;
+
+    // Water page (Sprint 5).
+    in property <int> water-current: 0;
+    in property <int> water-goal: 2000;
+    in property <float> water-progress: 0.0;
+    in property <float> water-phase: 0.0;
+    in property <string> water-summary: "0 / 2,000 ml";
+    in property <string> water-percent: "0%";
+    in property <bool> water-can-undo: false;
+    in property <bool> water-nudge: false;
+
+    // To-do page (Sprint 5).
+    in property <[TodoView]> todo-items: [];
+    in property <int> todo-total: 0;
+    in property <int> todo-done: 0;
+    in property <string> todo-summary: "No tasks yet";
+    in-out property <string> todo-draft: "";
+    in-out property <bool> todo-edit-active: false;
+
     callback toggle-expand();
     callback page-selected(int);
     callback quit();
@@ -119,10 +153,24 @@ export component AppWindow inherits Window {
     callback shelf-clear();
     callback shelf-open(int);
     callback shelf-remove(int);
+    callback focus-toggle();
+    callback focus-reset();
+    callback focus-preset(int);
+    callback focus-adjust(int);
+    callback water-add(int);
+    callback water-undo();
+    callback todo-add(string);
+    callback todo-toggle(int);
+    callback todo-remove(int);
+    callback todo-clear-done();
+    callback todo-reorder(int, float);
+    callback todo-edit(bool);
 
     // --- Design tokens ------------------------------------------------------
     private property <length> bottom-radius: root.stealth ? 2.5px : 18px;
     private property <int> page-count: 5;
+    private property <[int]> focus-presets: [15, 25, 45, 60];
+    private property <[int]> water-presets: [150, 250, 500];
     private property <length> ring-size: 18px;
     private property <length> wave-bar-width: 2.5px;
 
@@ -325,6 +373,21 @@ export component AppWindow inherits Window {
                     opacity: root.aura-opacity;
                 }
 
+                // Hydration nudge: the mascot glows water-blue after 90 idle minutes.
+                Rectangle {
+                    width: 44px;
+                    height: 44px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 22px;
+                    background: @radial-gradient(circle, #38BDF8AA 0%, #0EA5E940 52%, transparent 80%);
+                    opacity: root.water-nudge ? 0.9 : 0.0;
+                    animate opacity {
+                        duration: 600ms;
+                        easing: ease-in-out;
+                    }
+                }
+
                 // Rotating plasma corona core
                 Image {
                     source: root.corona;
@@ -346,6 +409,34 @@ export component AppWindow inherits Window {
                     y: (parent.height - self.height) / 2 + root.orb-offset-y * 0.25;
                     opacity: 1.0;
                     image-fit: contain;
+                }
+            }
+
+            // 2b. Compact Pill: remaining focus time while a session is active.
+            Rectangle {
+                x: 46px;
+                y: (parent.height - self.height) / 2;
+                width: 66px;
+                height: 20px;
+                border-radius: 10px;
+                background: #00F0FF1A;
+                border-width: 1px;
+                border-color: #00F0FF33;
+                opacity: (root.focus-active && !root.stealth) ? 1.0 : 0.0;
+                animate opacity {
+                    duration: 220ms;
+                    easing: ease-out;
+                }
+
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: root.focus-remaining;
+                    color: #00F0FF;
+                    font-size: 10.5px;
+                    font-weight: 700;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
                 }
             }
 
@@ -1712,7 +1803,506 @@ export component AppWindow inherits Window {
 
                     }
 
-                    // --- Shelf page (Sprint 4) --------------------------------
+                    // --- Focus page (Sprint 5) --------------------------------
+                    if root.active-page == 1: VerticalLayout {
+                        width: parent.width;
+                        height: parent.height;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        padding-top: 8px;
+                        padding-bottom: 6px;
+                        spacing: 4px;
+
+                        // Session label + completed counter.
+                        HorizontalLayout {
+                            height: 18px;
+                            spacing: 8px;
+
+                            Text {
+                                text: root.focus-session;
+                                color: root.focus-celebrate ? #00F0FF : #E5E7EB;
+                                font-size: 9.5px;
+                                font-weight: 700;
+                                letter-spacing: 0.6px;
+                                vertical-alignment: center;
+                                animate color {
+                                    duration: 220ms;
+                                    easing: ease-out;
+                                }
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: transparent;
+                            }
+
+                            Text {
+                                text: "\{root.focus-completed} done today";
+                                color: #6B7280;
+                                font-size: 8.5px;
+                                font-weight: 600;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            height: 88px;
+                            spacing: 12px;
+
+                            // Countdown ring.
+                            Rectangle {
+                                width: 88px;
+                                height: 88px;
+                                background: transparent;
+
+                                Path {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    viewbox-x: 0;
+                                    viewbox-y: 0;
+                                    viewbox-width: 88;
+                                    viewbox-height: 88;
+                                    fill: transparent;
+                                    stroke: #1F2937;
+                                    stroke-width: 6px;
+                                    MoveTo { x: 44; y: 7; }
+                                    ArcTo {
+                                        radius-x: 37;
+                                        radius-y: 37;
+                                        large-arc: false;
+                                        sweep: true;
+                                        x: 44;
+                                        y: 81;
+                                    }
+                                    ArcTo {
+                                        radius-x: 37;
+                                        radius-y: 37;
+                                        large-arc: false;
+                                        sweep: true;
+                                        x: 44;
+                                        y: 7;
+                                    }
+                                }
+
+                                if root.focus-progress > 0.002 && root.focus-progress < 0.999: progress-arc := Path {
+                                    private property <float> arc-deg: root.focus-progress * 360;
+                                    private property <angle> arc-angle: (self.arc-deg - 90) * 1deg;
+                                    private property <float> arc-x: 44 + 37 * Math.cos(self.arc-angle);
+                                    private property <float> arc-y: 44 + 37 * Math.sin(self.arc-angle);
+                                    width: parent.width;
+                                    height: parent.height;
+                                    viewbox-x: 0;
+                                    viewbox-y: 0;
+                                    viewbox-width: 88;
+                                    viewbox-height: 88;
+                                    fill: transparent;
+                                    stroke: root.focus-celebrate ? #10B981 : #00F0FF;
+                                    stroke-width: 6px;
+                                    stroke-line-cap: round;
+                                    MoveTo { x: 44; y: 7; }
+                                    ArcTo {
+                                        radius-x: 37;
+                                        radius-y: 37;
+                                        large-arc: progress-arc.arc-deg > 180;
+                                        sweep: true;
+                                        x: progress-arc.arc-x;
+                                        y: progress-arc.arc-y;
+                                    }
+                                }
+
+                                if root.focus-progress >= 0.999: Path {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    viewbox-x: 0;
+                                    viewbox-y: 0;
+                                    viewbox-width: 88;
+                                    viewbox-height: 88;
+                                    fill: transparent;
+                                    stroke: #00F0FF;
+                                    stroke-width: 6px;
+                                    MoveTo { x: 44; y: 7; }
+                                    ArcTo {
+                                        radius-x: 37;
+                                        radius-y: 37;
+                                        large-arc: false;
+                                        sweep: true;
+                                        x: 44;
+                                        y: 81;
+                                    }
+                                    ArcTo {
+                                        radius-x: 37;
+                                        radius-y: 37;
+                                        large-arc: false;
+                                        sweep: true;
+                                        x: 44;
+                                        y: 7;
+                                    }
+                                }
+
+                                Text {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    text: root.focus-remaining;
+                                    color: #FFFFFF;
+                                    font-size: 21px;
+                                    font-weight: 700;
+                                    letter-spacing: 0.5px;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 7px;
+
+                                HorizontalLayout {
+                                    height: 28px;
+                                    spacing: 6px;
+
+                                    Rectangle {
+                                        width: 92px;
+                                        height: 28px;
+                                        border-radius: 14px;
+                                        background: root.focus-running ? #1F2937 : #00F0FF;
+
+                                        Text {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            text: root.focus-running ? "Pause" : "Start";
+                                            color: root.focus-running ? #E5E7EB : #041014;
+                                            font-size: 10px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.focus-toggle();
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        width: 62px;
+                                        height: 28px;
+                                        border-radius: 14px;
+                                        background: #1F2937;
+
+                                        Text {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            text: "Reset";
+                                            color: #9CA3AF;
+                                            font-size: 10px;
+                                            font-weight: 600;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.focus-reset();
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        width: 26px;
+                                        height: 26px;
+                                        border-radius: 13px;
+                                        background: #16161A;
+                                        border-width: 1px;
+                                        border-color: #FFFFFF12;
+
+                                        Text {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            text: "-5";
+                                            color: #9CA3AF;
+                                            font-size: 8px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.focus-adjust(-5);
+                                            }
+                                        }
+                                    }
+
+                                    Rectangle {
+                                        width: 26px;
+                                        height: 26px;
+                                        border-radius: 13px;
+                                        background: #16161A;
+                                        border-width: 1px;
+                                        border-color: #FFFFFF12;
+
+                                        Text {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            text: "+5";
+                                            color: #9CA3AF;
+                                            font-size: 8px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.focus-adjust(5);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                HorizontalLayout {
+                                    height: 22px;
+                                    spacing: 4px;
+
+                                    for preset in root.focus-presets: Rectangle {
+                                        width: 44px;
+                                        height: 22px;
+                                        border-radius: 11px;
+                                        background: root.focus-minutes == preset ? #00F0FF1F : #FFFFFF08;
+                                        border-width: 1px;
+                                        border-color: root.focus-minutes == preset ? #00F0FF66 : #FFFFFF12;
+
+                                        Text {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            text: "\{preset}m";
+                                            color: root.focus-minutes == preset ? #00F0FF : #9CA3AF;
+                                            font-size: 9px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.focus-preset(preset);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // --- Water page (Sprint 5) --------------------------------
+                    if root.active-page == 2: VerticalLayout {
+                        width: parent.width;
+                        height: parent.height;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        padding-top: 8px;
+                        padding-bottom: 6px;
+                        spacing: 5px;
+
+                        HorizontalLayout {
+                            height: 18px;
+                            spacing: 8px;
+
+                            Text {
+                                text: root.water-summary;
+                                color: #E5E7EB;
+                                font-size: 10px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: transparent;
+                            }
+
+                            Text {
+                                text: root.water-percent;
+                                color: #00F0FF;
+                                font-size: 10px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            height: 88px;
+                            spacing: 12px;
+
+                            // Liquid tank with an animated surface.
+                            Rectangle {
+                                width: 188px;
+                                height: 88px;
+                                border-radius: 12px;
+                                clip: true;
+                                background: @linear-gradient(180deg, #0B1220 0%, #060B12 100%);
+                                border-width: 1px;
+                                border-color: #00F0FF22;
+
+                                Rectangle {
+                                    width: parent.width;
+                                    height: root.water-progress * parent.height;
+                                    y: parent.height - self.height;
+                                    background: @linear-gradient(180deg, #00F0FF44 0%, #0284C766 55%, #0E7490AA 100%);
+                                    animate height {
+                                        duration: 320ms;
+                                        easing: ease-out;
+                                    }
+                                }
+
+                                // Two crests slide horizontally to fake a moving surface.
+                                Rectangle {
+                                    width: parent.width;
+                                    height: root.water-progress * parent.height;
+                                    y: parent.height - self.height;
+                                    clip: true;
+                                    background: transparent;
+
+                                    Path {
+                                        x: -root.water-phase * 94px;
+                                        y: 0px;
+                                        width: parent.width + 94px;
+                                        height: 14px;
+                                        viewbox-x: 0;
+                                        viewbox-y: 0;
+                                        viewbox-width: 188;
+                                        viewbox-height: 14;
+                                        fill: #00F0FF66;
+                                        MoveTo { x: 0; y: 7; }
+                                        CubicTo {
+                                            control-1-x: 12;
+                                            control-1-y: 0;
+                                            control-2-x: 35;
+                                            control-2-y: 14;
+                                            x: 47;
+                                            y: 7;
+                                        }
+                                        CubicTo {
+                                            control-1-x: 59;
+                                            control-1-y: 0;
+                                            control-2-x: 82;
+                                            control-2-y: 14;
+                                            x: 94;
+                                            y: 7;
+                                        }
+                                        CubicTo {
+                                            control-1-x: 106;
+                                            control-1-y: 0;
+                                            control-2-x: 129;
+                                            control-2-y: 14;
+                                            x: 141;
+                                            y: 7;
+                                        }
+                                        CubicTo {
+                                            control-1-x: 153;
+                                            control-1-y: 0;
+                                            control-2-x: 176;
+                                            control-2-y: 14;
+                                            x: 188;
+                                            y: 7;
+                                        }
+                                        LineTo { x: 188; y: 14; }
+                                        LineTo { x: 0; y: 14; }
+                                        Close {}
+                                    }
+                                }
+
+                                Text {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    text: root.water-percent;
+                                    color: #E0F7FF;
+                                    font-size: 22px;
+                                    font-weight: 700;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+
+                            VerticalLayout {
+                                horizontal-stretch: 1;
+                                alignment: center;
+                                spacing: 7px;
+
+                                HorizontalLayout {
+                                    height: 28px;
+                                    spacing: 6px;
+
+                                    for amount in root.water-presets: Rectangle {
+                                        width: 58px;
+                                        height: 28px;
+                                        border-radius: 14px;
+                                        background: #0EA5E91F;
+                                        border-width: 1px;
+                                        border-color: #00F0FF33;
+
+                                        Text {
+                                            width: parent.width;
+                                            height: parent.height;
+                                            text: "+\{amount} ml";
+                                            color: #7DD3FC;
+                                            font-size: 9px;
+                                            font-weight: 700;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+
+                                        TouchArea {
+                                            clicked => {
+                                                root.water-add(amount);
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Rectangle {
+                                    width: 188px;
+                                    height: 24px;
+                                    border-radius: 12px;
+                                    background: #FFFFFF08;
+                                    border-width: 1px;
+                                    border-color: #FFFFFF12;
+                                    opacity: root.water-can-undo ? 1.0 : 0.35;
+
+                                    Text {
+                                        width: parent.width;
+                                        height: parent.height;
+                                        text: "Undo last glass";
+                                        color: #9CA3AF;
+                                        font-size: 9px;
+                                        font-weight: 600;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+
+                                    TouchArea {
+                                        clicked => {
+                                            if (root.water-can-undo) {
+                                                root.water-undo();
+                                            }
+                                        }
+                                    }
+                                }
+
+                                Text {
+                                    text: root.water-nudge ? "Time for a glass of water" : "Goal \{root.water-goal} ml per day";
+                                    color: root.water-nudge ? #38BDF8 : #4B5563;
+                                    font-size: 8px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                }
+                            }
+                        }
+                    }
+
+
                     if root.active-page == 3: VerticalLayout {
                         width: parent.width;
                         height: parent.height;
@@ -2076,36 +2666,321 @@ export component AppWindow inherits Window {
                         }
                     }
 
-                    // --- Placeholder for later sprints -------------------------
-                    if root.active-page != 0 && root.active-page != 3: VerticalLayout {
-                        padding-left: 14px;
-                        padding-right: 14px;
-                        padding-top: 10px;
-                        padding-bottom: 10px;
-                        spacing: 3px;
-                        alignment: center;
+                    // --- To-do page (Sprint 5) --------------------------------
+                    if root.active-page == 4: VerticalLayout {
+                        width: parent.width;
+                        height: parent.height;
+                        padding-left: 12px;
+                        padding-right: 12px;
+                        padding-top: 8px;
+                        padding-bottom: 6px;
+                        spacing: 4px;
 
-                        Text {
-                            text: "SPRINT 2 · MUSIC & LIVE WAVE";
-                            color: #6B7280;
-                            font-size: 8.5px;
-                            font-weight: 700;
-                            letter-spacing: 1.2px;
+                        // Counter + clear completed.
+                        HorizontalLayout {
+                            height: 18px;
+                            spacing: 8px;
+
+                            Text {
+                                text: root.todo-summary;
+                                color: #E5E7EB;
+                                font-size: 9.5px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: transparent;
+                            }
+
+                            Rectangle {
+                                width: 64px;
+                                height: 18px;
+                                border-radius: 9px;
+                                background: #1F2937;
+                                opacity: root.todo-done > 0 ? 1.0 : 0.35;
+
+                                Text {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    text: "Clear done";
+                                    color: #9CA3AF;
+                                    font-size: 8px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                TouchArea {
+                                    clicked => {
+                                        if (root.todo-done > 0) {
+                                            root.todo-clear-done();
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        Text {
-                            text: root.page-subtitle;
-                            color: #F9FAFB;
-                            font-size: 13px;
-                            font-weight: 600;
-                            overflow: TextOverflow.elide;
-                            max-width: parent.width;
+
+                        // Scrollable checklist.
+                        Rectangle {
+                            width: parent.width;
+                            height: 88px;
+                            clip: true;
+                            background: transparent;
+
+                            if root.todo-total == 0: Rectangle {
+                                width: parent.width;
+                                height: parent.height;
+                                border-radius: 10px;
+                                background: #FFFFFF05;
+                                border-width: 1px;
+                                border-color: #FFFFFF0F;
+
+                                VerticalLayout {
+                                    alignment: center;
+                                    spacing: 4px;
+
+                                    Rectangle {
+                                        height: 20px;
+                                        background: transparent;
+
+                                        Path {
+                                            width: 18px;
+                                            height: 18px;
+                                            x: (parent.width - self.width) / 2;
+                                            viewbox-x: 0;
+                                            viewbox-y: 0;
+                                            viewbox-width: 18;
+                                            viewbox-height: 18;
+                                            fill: transparent;
+                                            stroke: #4B5563;
+                                            stroke-width: 1.5px;
+                                            stroke-line-cap: round;
+                                            MoveTo { x: 9; y: 1.5; }
+                                            ArcTo {
+                                                radius-x: 7.5;
+                                                radius-y: 7.5;
+                                                large-arc: false;
+                                                sweep: true;
+                                                x: 9;
+                                                y: 16.5;
+                                            }
+                                            ArcTo {
+                                                radius-x: 7.5;
+                                                radius-y: 7.5;
+                                                large-arc: false;
+                                                sweep: true;
+                                                x: 9;
+                                                y: 1.5;
+                                            }
+                                        }
+                                    }
+
+                                    Text {
+                                        text: "No tasks yet";
+                                        color: #9CA3AF;
+                                        font-size: 10px;
+                                        font-weight: 600;
+                                        horizontal-alignment: center;
+                                    }
+
+                                    Text {
+                                        text: "Type below and press Enter";
+                                        color: #4B5563;
+                                        font-size: 8px;
+                                        horizontal-alignment: center;
+                                    }
+                                }
+                            }
+
+                            if root.todo-total > 0: Flickable {
+                                width: parent.width;
+                                height: parent.height;
+                                content-width: parent.width;
+                                content-height: root.todo-total * 24px;
+                                interactive: false;
+
+                                VerticalLayout {
+                                    width: parent.width;
+                                    height: root.todo-total * 24px;
+                                    spacing: 0px;
+
+                                    for item[i] in root.todo-items: Rectangle {
+                                        width: parent.width;
+                                        height: 24px;
+                                        background: drag.pressed ? #FFFFFF0C : transparent;
+
+                                        // Drag anywhere on the row to reorder.
+                                        drag := TouchArea {
+                                            pointer-event(event) => {
+                                                if (event.kind == PointerEventKind.up) {
+                                                    root.todo-reorder(i, (self.mouse-y - self.pressed-y) / 1px);
+                                                    return EventResult.accept;
+                                                }
+                                                return EventResult.reject;
+                                            }
+                                        }
+
+                                        // Circular checkbox.
+                                        Rectangle {
+                                            x: 0px;
+                                            y: (parent.height - self.height) / 2;
+                                            width: 15px;
+                                            height: 15px;
+                                            border-radius: 7.5px;
+                                            border-width: 1.5px;
+                                            border-color: item.completed ? #10B981 : #4B5563;
+                                            background: item.completed ? #10B981 : transparent;
+
+                                            if item.completed: Path {
+                                                width: 8px;
+                                                height: 6px;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                                viewbox-x: 0;
+                                                viewbox-y: 0;
+                                                viewbox-width: 8;
+                                                viewbox-height: 6;
+                                                fill: transparent;
+                                                stroke: #041014;
+                                                stroke-width: 1.6px;
+                                                stroke-line-cap: round;
+                                                MoveTo { x: 1; y: 3; }
+                                                LineTo { x: 3; y: 5; }
+                                                LineTo { x: 7; y: 1; }
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.todo-toggle(item.id);
+                                                }
+                                            }
+                                        }
+
+                                        name := Text {
+                                            x: 24px;
+                                            width: parent.width - 54px;
+                                            height: parent.height;
+                                            text: item.text;
+                                            color: item.completed ? #6B7280 : #E5E7EB;
+                                            font-size: 10px;
+                                            font-weight: 500;
+                                            vertical-alignment: center;
+                                            overflow: TextOverflow.elide;
+
+                                            animate color {
+                                                duration: 180ms;
+                                                easing: ease-out;
+                                            }
+                                        }
+
+                                        if item.completed: Rectangle {
+                                            x: 24px;
+                                            y: (parent.height - self.height) / 2;
+                                            width: min(name.preferred-width, name.width);
+                                            height: 1px;
+                                            background: #6B7280;
+                                        }
+
+                                        // Delete task.
+                                        Rectangle {
+                                            x: parent.width - 20px;
+                                            y: (parent.height - self.height) / 2;
+                                            width: 18px;
+                                            height: 18px;
+                                            border-radius: 9px;
+                                            background: #FFFFFF08;
+                                            opacity: 0.6;
+
+                                            Text {
+                                                width: parent.width;
+                                                height: parent.height;
+                                                text: "×";
+                                                color: #9CA3AF;
+                                                font-size: 11px;
+                                                font-weight: 700;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.todo-remove(item.id);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
                         }
-                        Text {
-                            text: root.build-label;
-                            color: #4B5563;
-                            font-size: 9px;
-                            overflow: TextOverflow.elide;
-                            max-width: parent.width;
+
+                        // Inline quick add.
+                        Rectangle {
+                            width: parent.width;
+                            height: 26px;
+                            border-radius: 13px;
+                            background: root.todo-edit-active ? #00F0FF12 : #FFFFFF08;
+                            border-width: 1px;
+                            border-color: root.todo-edit-active ? #00F0FF55 : #FFFFFF12;
+
+                            animate border-color {
+                                duration: 160ms;
+                                easing: ease-out;
+                            }
+
+                            Text {
+                                x: 12px;
+                                width: 12px;
+                                height: parent.height;
+                                text: "+";
+                                color: #00F0FF;
+                                font-size: 13px;
+                                font-weight: 700;
+                                vertical-alignment: center;
+                            }
+
+                            todo-input := TextInput {
+                                x: 28px;
+                                width: parent.width - 72px;
+                                height: parent.height;
+                                text <=> root.todo-draft;
+                                single-line: true;
+                                font-size: 10px;
+                                color: #E5E7EB;
+                                vertical-alignment: center;
+                                changed has-focus => {
+                                    root.todo-edit(todo-input.has-focus);
+                                }
+                                accepted => {
+                                    if (todo-input.text != "") {
+                                        root.todo-add(todo-input.text);
+                                        root.todo-draft = "";
+                                    }
+                                }
+                            }
+
+                            if root.todo-draft == "" && !todo-input.has-focus: Text {
+                                x: 28px;
+                                width: parent.width - 72px;
+                                height: parent.height;
+                                text: "Add a task...";
+                                color: #6B7280;
+                                font-size: 10px;
+                                vertical-alignment: center;
+                            }
+
+                            Text {
+                                x: parent.width - 40px;
+                                width: 28px;
+                                height: parent.height;
+                                text: "Enter";
+                                color: #4B5563;
+                                font-size: 8px;
+                                font-weight: 600;
+                                horizontal-alignment: right;
+                                vertical-alignment: center;
+                            }
                         }
                     }
                 }

@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod focus;
 mod living;
 mod lyrics;
 mod media;
@@ -7,6 +8,8 @@ mod shelf;
 mod spring;
 mod state;
 mod system;
+mod todo;
+mod water;
 mod wave;
 mod window_ext;
 
@@ -71,7 +74,7 @@ fn apply_persisted_state(app: &AppWindow, store: &StateStore) {
     app.set_page_title(page.title().into());
     app.set_page_subtitle(page.subtitle().into());
     app.set_lyrics_enabled(store.with(|state| state.lyrics_enabled));
-    app.set_build_label(format!("v{} · Sprint 4 · File Shelf", env!("CARGO_PKG_VERSION")).into());
+    app.set_build_label(format!("v{} · Sprint 5 · Productivity", env!("CARGO_PKG_VERSION")).into());
 }
 
 fn wire_callbacks(app: &AppWindow, store: &StateStore) {

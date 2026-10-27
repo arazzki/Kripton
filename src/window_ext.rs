@@ -4,7 +4,7 @@ use std::{
     mem::size_of,
     rc::Rc,
     sync::Arc,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
@@ -21,22 +21,29 @@ use windows::{
             Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY},
         },
         System::Threading::CreateMutexW,
-        UI::WindowsAndMessaging::{
-            GetCursorPos, GetWindowLongPtrW, GetWindowRect, SetWindowLongPtrW, SetWindowPos,
-            GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE, SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_LAYERED,
-            WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+        UI::{
+            Input::KeyboardAndMouse::SetFocus,
+            WindowsAndMessaging::{
+                GetCursorPos, GetWindowLongPtrW, GetWindowRect, SetForegroundWindow,
+                SetWindowLongPtrW, SetWindowPos, GWL_EXSTYLE, HWND_TOPMOST, SWP_NOACTIVATE,
+                SWP_NOSIZE, SWP_SHOWWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+                WS_EX_TRANSPARENT,
+            },
         },
     },
 };
 
 use crate::{
+    focus::{self, FocusPhase, FocusTimer},
     living::{Living, LivingFrame},
     media::{self, Artwork, MediaController},
     shelf::{self, ShelfManager, ShelfThumb},
     spring::{Spring, SpringConfig},
-    state::{NotchMode, Page},
+    state::{NotchMode, Page, TodoItem},
+    todo,
+    water::{self, WaterTracker},
     wave::AudioWave,
-    AppWindow, ShelfView,
+    AppWindow, ShelfView, TodoView,
 };
 
 const HOVER_CLOSE_DELAY: Duration = Duration::from_millis(350);
@@ -165,6 +172,24 @@ impl OverlayWindow {
             };
             if wanted != current {
                 SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, wanted as isize);
+            }
+        }
+    }
+
+    pub fn set_activatable(&self, enabled: bool) {
+        unsafe {
+            let current = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) as u32;
+            let wanted = if enabled {
+                current & !WS_EX_NOACTIVATE.0
+            } else {
+                current | WS_EX_NOACTIVATE.0
+            };
+            if wanted != current {
+                SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, wanted as isize);
+            }
+            if enabled {
+                let _ = SetForegroundWindow(self.hwnd);
+                let _ = SetFocus(Some(self.hwnd));
             }
         }
     }
@@ -357,6 +382,15 @@ struct Runtime {
     shelf_revision: u64,
     shelf_drag: bool,
     shelf_fade_at: Option<Instant>,
+    focus: FocusTimer,
+    focus_text: String,
+    focus_celebrate_at: Option<Instant>,
+    water: WaterTracker,
+    water_phase: f32,
+    water_nudge: bool,
+    todos: Vec<TodoItem>,
+    todo_editing: bool,
+    last_day_check: Instant,
 }
 
 fn install_runtime(
@@ -368,6 +402,17 @@ fn install_runtime(
     store: crate::state::StateStore,
 ) {
     let weak = app.as_weak();
+    let (focus_minutes, water_seed, todos) = store.with(|state| {
+        (
+            state.focus_timer.default_minutes,
+            (
+                state.water_tracker.current_ml,
+                state.water_tracker.daily_goal_ml,
+                state.water_tracker.last_drink_timestamp,
+            ),
+            state.todos.clone(),
+        )
+    });
     let runtime = Rc::new(RefCell::new(Runtime {
         left_at: None,
         click_through: true,
@@ -397,10 +442,27 @@ fn install_runtime(
         shelf_revision: 0,
         shelf_drag: false,
         shelf_fade_at: None,
+        focus: FocusTimer::new(focus_minutes),
+        focus_text: String::new(),
+        focus_celebrate_at: None,
+        water: WaterTracker::new(water_seed.0, water_seed.1, water_seed.2),
+        water_phase: 0.0,
+        water_nudge: false,
+        todos,
+        todo_editing: false,
+        last_day_check: Instant::now(),
     }));
 
     install_media_callbacks(app, &runtime);
     install_shelf_callbacks(app, &runtime);
+    install_productivity_callbacks(app, &runtime, overlay);
+
+    {
+        let mut runtime = runtime.borrow_mut();
+        sync_focus_ui(app, &mut runtime);
+        sync_water_ui(app, &runtime);
+        rebuild_todos(app, &runtime);
+    }
 
     match shelf::register_drop_target(overlay.hwnd(), runtime.borrow().shelf.clone()) {
         Ok(()) => crate::log_line("shelf drop target registered"),
@@ -460,6 +522,10 @@ fn install_runtime(
             }
         }
 
+        // Productivity: Pomodoro countdown, daily rollover, hydration nudge and
+        // the animated water surface.
+        update_productivity(&app, &mut runtime, overlay, now, dt);
+
         // Advance the geometry spring every tick for 60 fps morphs.
         MORPH.with(|morph| {
             let mut morph = morph.borrow_mut();
@@ -509,6 +575,10 @@ fn install_runtime(
                     apply_mode(&app, collapsed_mode());
                     runtime.left_at = None;
                 }
+            } else if runtime.focus_celebrate_at.is_some() {
+                // Keep the compact pill visible for the completion pulse.
+                apply_mode(&app, NotchMode::CompactHovered);
+                runtime.left_at = None;
             } else {
                 apply_mode(&app, collapsed_mode());
                 runtime.left_at = None;
@@ -748,6 +818,362 @@ fn shelf_thumb_image(thumb: &ShelfThumb) -> slint::Image {
         thumb.height,
     );
     slint::Image::from_rgba8(buffer)
+}
+
+const TODO_ROW_HEIGHT: f32 = 24.0;
+const FOCUS_CELEBRATE: Duration = Duration::from_secs(3);
+
+fn install_productivity_callbacks(
+    app: &AppWindow,
+    runtime: &Rc<RefCell<Runtime>>,
+    overlay: OverlayWindow,
+) {
+    let runtime_toggle = runtime.clone();
+    let weak_toggle = app.as_weak();
+    app.on_focus_toggle(move || {
+        let Some(app) = weak_toggle.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_toggle.borrow_mut();
+        runtime.focus.toggle();
+        sync_focus_ui(&app, &mut runtime);
+    });
+
+    let runtime_reset = runtime.clone();
+    let weak_reset = app.as_weak();
+    app.on_focus_reset(move || {
+        let Some(app) = weak_reset.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_reset.borrow_mut();
+        runtime.focus.reset();
+        sync_focus_ui(&app, &mut runtime);
+    });
+
+    let runtime_preset = runtime.clone();
+    let weak_preset = app.as_weak();
+    app.on_focus_preset(move |minutes| {
+        let Some(app) = weak_preset.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_preset.borrow_mut();
+        runtime.focus.set_focus_minutes(minutes.max(0) as u32);
+        let minutes = runtime.focus.focus_minutes();
+        runtime
+            .store
+            .update(|state| state.focus_timer.default_minutes = minutes);
+        sync_focus_ui(&app, &mut runtime);
+    });
+
+    let runtime_adjust = runtime.clone();
+    let weak_adjust = app.as_weak();
+    app.on_focus_adjust(move |delta| {
+        let Some(app) = weak_adjust.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_adjust.borrow_mut();
+        runtime.focus.adjust_focus_minutes(delta);
+        let minutes = runtime.focus.focus_minutes();
+        runtime
+            .store
+            .update(|state| state.focus_timer.default_minutes = minutes);
+        sync_focus_ui(&app, &mut runtime);
+    });
+
+    let runtime_water = runtime.clone();
+    let weak_water = app.as_weak();
+    app.on_water_add(move |ml| {
+        if ml <= 0 {
+            return;
+        }
+        let Some(app) = weak_water.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_water.borrow_mut();
+        let now = unix_now();
+        runtime.water.add(ml as u32, now);
+        let current = runtime.water.current_ml();
+        let last_drink = runtime.water.last_drink();
+        let today = today_key();
+        runtime.store.update(|state| {
+            state.water_tracker.current_ml = current;
+            state.water_tracker.last_drink_timestamp = last_drink;
+            state.water_tracker.date = today;
+        });
+        runtime.water_nudge = false;
+        app.set_water_nudge(false);
+        sync_water_ui(&app, &runtime);
+    });
+
+    let runtime_undo = runtime.clone();
+    let weak_undo = app.as_weak();
+    app.on_water_undo(move || {
+        let Some(app) = weak_undo.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_undo.borrow_mut();
+        if runtime.water.undo() {
+            let current = runtime.water.current_ml();
+            runtime
+                .store
+                .update(|state| state.water_tracker.current_ml = current);
+            sync_water_ui(&app, &runtime);
+        }
+    });
+
+    let runtime_add = runtime.clone();
+    let weak_add = app.as_weak();
+    app.on_todo_add(move |text| {
+        let Some(app) = weak_add.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_add.borrow_mut();
+        if todo::add(&mut runtime.todos, &text).is_some() {
+            persist_todos(&runtime);
+            rebuild_todos(&app, &runtime);
+        }
+    });
+
+    let runtime_toggle_todo = runtime.clone();
+    let weak_toggle_todo = app.as_weak();
+    app.on_todo_toggle(move |id| {
+        if id < 0 {
+            return;
+        }
+        let Some(app) = weak_toggle_todo.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_toggle_todo.borrow_mut();
+        if todo::toggle(&mut runtime.todos, id as u64) {
+            persist_todos(&runtime);
+            rebuild_todos(&app, &runtime);
+        }
+    });
+
+    let runtime_remove_todo = runtime.clone();
+    let weak_remove_todo = app.as_weak();
+    app.on_todo_remove(move |id| {
+        if id < 0 {
+            return;
+        }
+        let Some(app) = weak_remove_todo.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_remove_todo.borrow_mut();
+        if todo::remove(&mut runtime.todos, id as u64) {
+            persist_todos(&runtime);
+            rebuild_todos(&app, &runtime);
+        }
+    });
+
+    let runtime_clear_todo = runtime.clone();
+    let weak_clear_todo = app.as_weak();
+    app.on_todo_clear_done(move || {
+        let Some(app) = weak_clear_todo.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_clear_todo.borrow_mut();
+        if todo::clear_completed(&mut runtime.todos) {
+            persist_todos(&runtime);
+            rebuild_todos(&app, &runtime);
+        }
+    });
+
+    let runtime_reorder = runtime.clone();
+    let weak_reorder = app.as_weak();
+    app.on_todo_reorder(move |index, dy| {
+        if index < 0 {
+            return;
+        }
+        let Some(app) = weak_reorder.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_reorder.borrow_mut();
+        let from = index as usize;
+        let target = index + (dy / TODO_ROW_HEIGHT).round() as i32;
+        if target < 0 || target as usize >= runtime.todos.len() {
+            return;
+        }
+        if todo::move_item(&mut runtime.todos, from, target as usize) {
+            persist_todos(&runtime);
+            rebuild_todos(&app, &runtime);
+        }
+    });
+
+    let runtime_edit = runtime.clone();
+    let weak_edit = app.as_weak();
+    app.on_todo_edit(move |active| {
+        overlay.set_activatable(active);
+        runtime_edit.borrow_mut().todo_editing = active;
+        if let Some(app) = weak_edit.upgrade() {
+            app.set_todo_edit_active(active);
+        }
+    });
+}
+fn update_productivity(
+    app: &AppWindow,
+    runtime: &mut Runtime,
+    overlay: OverlayWindow,
+    now: Instant,
+    dt: f32,
+) {
+    if runtime.focus.tick().is_some() {
+        finish_focus_phase(app, runtime);
+    }
+
+    let text = runtime.focus.remaining_text();
+    if text != runtime.focus_text {
+        runtime.focus_text = text;
+        app.set_focus_remaining(runtime.focus_text.clone().into());
+        app.set_focus_progress(runtime.focus.progress());
+        app.set_focus_running(runtime.focus.running());
+        app.set_focus_active(runtime.focus.active());
+    }
+
+    // Midnight rollover for the focus and water counters.
+    if now.duration_since(runtime.last_day_check) >= Duration::from_secs(60) {
+        runtime.last_day_check = now;
+        if runtime.store.roll_over_day() {
+            let (water, completed) = runtime.store.with(|state| {
+                (
+                    WaterTracker::new(
+                        state.water_tracker.current_ml,
+                        state.water_tracker.daily_goal_ml,
+                        state.water_tracker.last_drink_timestamp,
+                    ),
+                    state.focus_timer.completed_sessions_today,
+                )
+            });
+            runtime.water = water;
+            runtime.water_nudge = false;
+            app.set_water_nudge(false);
+            app.set_focus_completed(completed as i32);
+            sync_focus_ui(app, runtime);
+            sync_water_ui(app, runtime);
+        }
+    }
+
+    let nudge = runtime
+        .water
+        .needs_nudge(unix_now(), water::NUDGE_AFTER_SECONDS);
+    if nudge != runtime.water_nudge {
+        runtime.water_nudge = nudge;
+        app.set_water_nudge(nudge);
+    }
+
+    if app.get_expanded() && app.get_active_page() == 2 {
+        runtime.water_phase = (runtime.water_phase + dt * 0.22) % 1.0;
+        app.set_water_phase(runtime.water_phase);
+    }
+
+    // Three second plasma pulse when a phase completes.
+    if let Some(at) = runtime.focus_celebrate_at {
+        let elapsed = now.duration_since(at);
+        if elapsed >= FOCUS_CELEBRATE {
+            runtime.focus_celebrate_at = None;
+            app.set_focus_celebrate(false);
+        } else {
+            let pulse = 0.5 + 0.5 * (elapsed.as_secs_f32() * 7.0).sin();
+            app.set_orb_glow(0.35 + 0.5 * pulse);
+            app.set_aura_opacity(0.3 + 0.5 * pulse);
+        }
+    }
+
+    // Typing needs an activatable window; restore the overlay behaviour as soon
+    // as the To-do page or the expanded shell goes away.
+    if runtime.todo_editing && !(app.get_expanded() && app.get_active_page() == 4) {
+        runtime.todo_editing = false;
+        overlay.set_activatable(false);
+        app.set_todo_edit_active(false);
+    }
+}
+
+fn finish_focus_phase(app: &AppWindow, runtime: &mut Runtime) {
+    let completed = runtime.focus.complete();
+    focus::play_chime();
+    runtime.focus_celebrate_at = Some(Instant::now());
+    app.set_focus_celebrate(true);
+
+    if completed == FocusPhase::Focus {
+        let minutes = runtime.focus.focus_minutes();
+        let today = today_key();
+        let count = runtime.store.update(|state| {
+            if state.focus_timer.last_session_date != today {
+                state.focus_timer.last_session_date = today;
+                state.focus_timer.completed_sessions_today = 0;
+            }
+            state.focus_timer.completed_sessions_today =
+                state.focus_timer.completed_sessions_today.saturating_add(1);
+            state.focus_timer.default_minutes = minutes;
+            state.focus_timer.completed_sessions_today
+        });
+        app.set_focus_completed(count as i32);
+    }
+
+    sync_focus_ui(app, runtime);
+}
+
+fn sync_focus_ui(app: &AppWindow, runtime: &mut Runtime) {
+    let text = runtime.focus.remaining_text();
+    runtime.focus_text = text.clone();
+    app.set_focus_remaining(text.into());
+    app.set_focus_progress(runtime.focus.progress());
+    app.set_focus_running(runtime.focus.running());
+    app.set_focus_active(runtime.focus.active());
+    app.set_focus_minutes(runtime.focus.focus_minutes() as i32);
+
+    let completed = runtime
+        .store
+        .with(|state| state.focus_timer.completed_sessions_today);
+    app.set_focus_completed(completed as i32);
+    let session = if runtime.focus.phase() == FocusPhase::Focus {
+        format!("Focus Session #{}", completed + 1)
+    } else {
+        "Short Break".to_string()
+    };
+    app.set_focus_session(session.into());
+}
+
+fn sync_water_ui(app: &AppWindow, runtime: &Runtime) {
+    app.set_water_current(runtime.water.current_ml() as i32);
+    app.set_water_goal(runtime.water.goal_ml() as i32);
+    app.set_water_progress(runtime.water.progress());
+    app.set_water_summary(runtime.water.summary_text().into());
+    app.set_water_percent(runtime.water.percent_text().into());
+    app.set_water_can_undo(runtime.water.undo_available());
+}
+
+fn rebuild_todos(app: &AppWindow, runtime: &Runtime) {
+    let views: Vec<TodoView> = runtime
+        .todos
+        .iter()
+        .map(|todo| TodoView {
+            id: todo.id as i32,
+            text: todo.text.clone().into(),
+            completed: todo.completed,
+        })
+        .collect();
+    app.set_todo_items(ModelRc::new(VecModel::from(views)));
+    app.set_todo_total(runtime.todos.len() as i32);
+    app.set_todo_done(todo::completed_count(&runtime.todos) as i32);
+    app.set_todo_summary(todo::summary(&runtime.todos).into());
+}
+
+fn persist_todos(runtime: &Runtime) {
+    runtime
+        .store
+        .update(|state| state.todos = runtime.todos.clone());
+}
+
+fn unix_now() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|elapsed| elapsed.as_secs() as i64)
+        .unwrap_or(0)
+}
+
+fn today_key() -> String {
+    chrono::Local::now().format("%Y-%m-%d").to_string()
 }
 
 fn app_show_position(weak: &Weak<AppWindow>, fraction: f32, position: u64, duration: u64) {

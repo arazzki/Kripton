@@ -4,7 +4,7 @@
 
 Dibangun **100% dengan Rust + Slint**. Tidak ada Electron, WebView2, browser scraping, Discord RPC, skrip eksternal, atau database eksternal.
 
-> Status: **Sprint 4 — Shelf selesai**. Shell notch, Idle/Closed, halaman **Music** (WinRT SMTC + live wave FFT WASAPI), **Lyrics** (LRCLIB, lirik sinkron 580 px), dan **Shelf** (OLE drop target, carousel file/folder) sudah berjalan. Berikutnya Sprint 5: Focus, Water, dan To-do (lihat [`SPRINTS.md`](SPRINTS.md)).
+> Status: **Sprint 5 — Productivity selesai**. Shell notch, Idle/Closed, halaman **Music** (WinRT SMTC + live wave FFT WASAPI), **Lyrics** (LRCLIB, lirik sinkron 580 px), **Shelf** (OLE drop target, carousel file/folder), **Focus** (Pomodoro + chime), **Water** (gelombang + pengingat), dan **To-do** (checklist + drag reorder) sudah berjalan. Berikutnya Sprint 6: HUD headphone/charging, tray, dan release (lihat [`SPRINTS.md`](SPRINTS.md)).
 
 ![Kripton — concept art](assets/plasma_core_concept.png)
 
@@ -16,7 +16,7 @@ Dibangun **100% dengan Rust + Slint**. Tidak ada Electron, WebView2, browser scr
 
 | Idle / Stealth | Closed | Expanded |
 | --- | --- | --- |
-| Garis plasma 184 × 5 px, maskot 30 px saat wake, bernapas 0.25 Hz | Battery ring, jam 24-jam, dan 5 bar live wave di notch 336 × 34 px | Kartu 580 × 192 px: Music/Lyrics, Shelf, header battery + jam + live wave |
+| Garis plasma 184 × 5 px, maskot 30 px saat wake, bernapas 0.25 Hz | Battery ring, jam 24-jam, dan 5 bar live wave di notch 336 × 34 px | Kartu 580 × 192 px: Music/Lyrics, Focus, Water, Shelf, To-do, header battery + jam + live wave |
 
 Notch dianimasikan di kanvas transparan 680 × 250 px; shell expanded memakai layout tetap 580 × 192 px yang di-clip oleh siluet notch.
 
@@ -32,9 +32,9 @@ Palet: hitam pekat `#000000`, icy cyan `#00F0FF`, emerald `#10B981`, krypton vio
 - [x] **Music** — WinRT SMTC, album art, transport, seek slider, tombol buka aplikasi sumber.
 - [x] **Lyrics** — LRCLIB + lirik tersinkron, melebar 580 px.
 - [x] **Shelf** — OLE drop target, carousel 5 item, thumbnail gambar, Clear, buka via ShellExecute.
-- [ ] **Focus** — Pomodoro in-notch + chime.
-- [ ] **Water** — target harian, gelombang cairan, pengingat.
-- [ ] **To-do** — checklist cepat, strikethrough.
+- [x] **Focus** — Pomodoro 25/5, preset 15/25/45/60, ring progres, chime in-memory, sesi harian.
+- [x] **Water** — target 2.000 ml, +150/+250/+500, Undo, gelombang cairan, pengingat 90 menit.
+- [x] **To-do** — input inline, checklist, strikethrough, hapus, drag reorder, persistensi.
 - [ ] **HUD** — headphone connect & charging pop-up 3 detik.
 - [ ] **System** — tray icon, autostart, single instance, installer.
 
@@ -52,11 +52,14 @@ src/
 ├── media.rs          # worker SMTC MTA: metadata, artwork, transport, seek, buka sumber
 ├── lyrics.rs         # LRCLIB, parser LRC, cache RAM/disk, window sinkronisasi
 ├── shelf.rs          # OLE IDropTarget CF_HDROP, metadata file, thumbnail worker, persistensi
+├── focus.rs          # Pomodoro monotonic (GetTickCount64), fase 25/5, chime in-memory
+├── water.rs          # tracker hidrasi harian, undo, format ribuan, nudge 90 menit
+├── todo.rs           # checklist CRUD, reorder, ID stabil
 ├── wave.rs           # WASAPI loopback + FFT radix-2 512 → 5 pita, atomik
 └── window_ext.rs     # Win32 overlay, hover, runtime 60 fps, playback clock, callbacks
 
 ui/
-└── appwindow.slint   # shell notch, silhouette Path, idle/closed/expanded, Music/Lyrics/Shelf
+└── appwindow.slint   # shell notch, idle/closed/expanded, Music/Lyrics/Shelf/Focus/Water/To-do
 
 assets/
 ├── icon.ico            # ikon executable
@@ -110,7 +113,7 @@ cargo build --release
 # hasil: target\release\kripton.exe
 ```
 
-## Kontrol (Sprint 4)
+## Kontrol (Sprint 5)
 
 | Aksi | Hasil |
 | --- | --- |
@@ -125,6 +128,17 @@ cargo build --release
 | Klik play/pause, prev, next | Mengirim perintah ke sesi SMTC aktif |
 | Klik/drag seek bar | Memindahkan posisi pemutaran; waktu berjalan diinterpolasi 60 fps |
 | Klik tombol `>` | Membuka aplikasi sumber (mis. Spotify) lewat AUMID |
+| Focus: klik `Start`/`Pause` | Memulai atau menjeda countdown; chip waktu tetap tampil di pill compact |
+| Focus: klik `Reset` | Mengembalikan fase aktif ke durasi penuh |
+| Focus: klik preset `15/25/45/60` atau `±5` | Mengubah durasi sesi fokus dan menyimpannya sebagai default |
+| Sesi fokus selesai | Chime berbunyi sekali, plasma pulse 3 detik, lalu pindah ke `Short Break` dalam keadaan pause |
+| Water: klik `+150` / `+250` / `+500` | Menambah asupan dan mengaktifkan `Undo last glass` |
+| Water: klik `Undo last glass` | Membatalkan gelas terakhir |
+| Water: diam 90 menit di bawah target | Pesan `Time for a glass of water` menyala biru |
+| To-do: ketik lalu `Enter` | Menambah task baru; input tetap fokus untuk task berikutnya |
+| To-do: klik checkbox | Menandai selesai (strikethrough `#6B7280`) |
+| To-do: drag baris | Memindahkan urutan task; urutan disimpan ke `state.json` |
+| To-do: klik ikon hapus / `Clear done` | Menghapus satu task atau semua task selesai |
 | Jauhkan kursor (250 ms) | Notch mengecil kembali ke Idle/Closed |
 | Klik notch | Toggle expand/collapse |
 | Klik titik pagination | Pindah halaman (Music/Focus/Water/Shelf/To-do) |
@@ -147,7 +161,7 @@ Log ringan (rotasi manual, tanpa telemetri):
 %APPDATA%\Kripton\kripton.log
 ```
 
-State ditulis lewat file sementara lalu `rename`, dan state korup dikarantina menjadi `state.corrupt-YYYYMMDD-HHMMSS.json`. Tidak ada data yang dikirim ke mana pun saat ini. Metadata musik dibaca lokal lewat SMTC, audio dianalisis lokal lewat loopback, dan artwork tidak pernah diunggah. Nanti, lirik hanya memanggil LRCLIB secara langsung saat mode Lyrics aktif; tidak ada analytics.
+State ditulis lewat file sementara lalu `rename`, dan state korup dikarantina menjadi `state.corrupt-YYYYMMDD-HHMMSS.json`. Tidak ada data yang dikirim ke mana pun saat ini. Metadata musik dibaca lokal lewat SMTC, audio dianalisis lokal lewat loopback, dan artwork tidak pernah diunggah. Timer fokus, asupan air, dan daftar to-do hanya tersimpan di `state.json` lokal. Nanti, lirik hanya memanggil LRCLIB secara langsung saat mode Lyrics aktif; tidak ada analytics.
 
 ## Aset
 
