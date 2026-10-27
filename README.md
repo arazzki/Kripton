@@ -4,7 +4,7 @@
 
 Dibangun **100% dengan Rust + Slint**. Tidak ada Electron, WebView2, browser scraping, Discord RPC, skrip eksternal, atau database eksternal.
 
-> Status: **Sprint 2 — Music + Live Wave selesai**. Shell notch, Idle, Closed, serta halaman **Music** (WinRT SMTC: metadata, album art, transport, seek) dan **live wave** dari FFT WASAPI loopback sudah berjalan. Lirik sinkron menyusul di Sprint 3 (lihat [`SPRINTS.md`](SPRINTS.md)).
+> Status: **Sprint 4 — Shelf selesai**. Shell notch, Idle/Closed, halaman **Music** (WinRT SMTC + live wave FFT WASAPI), **Lyrics** (LRCLIB, lirik sinkron 580 px), dan **Shelf** (OLE drop target, carousel file/folder) sudah berjalan. Berikutnya Sprint 5: Focus, Water, dan To-do (lihat [`SPRINTS.md`](SPRINTS.md)).
 
 ![Kripton — concept art](assets/plasma_core_concept.png)
 
@@ -14,11 +14,11 @@ Dibangun **100% dengan Rust + Slint**. Tidak ada Electron, WebView2, browser scr
 
 ## Tampilan
 
-| Idle | Closed | Music (expanded) |
+| Idle / Stealth | Closed | Expanded |
 | --- | --- | --- |
-| Orb plasma di notch 190 × 38 px, bernapas 0.25 Hz | Battery ring 18 px, jam 24-jam, 5 bar live wave di notch 210 × 38 px | Album art 64 px, judul/artis/album, seek bar, kontrol transport, header battery + jam + live wave |
+| Garis plasma 184 × 5 px, maskot 30 px saat wake, bernapas 0.25 Hz | Battery ring, jam 24-jam, dan 5 bar live wave di notch 336 × 34 px | Kartu 580 × 192 px: Music/Lyrics, Shelf, header battery + jam + live wave |
 
-Shell expanded berukuran 460 × 175 px dengan header, kartu halaman, dan pagination.
+Notch dianimasikan di kanvas transparan 680 × 250 px; shell expanded memakai layout tetap 580 × 192 px yang di-clip oleh siluet notch.
 
 Palet: hitam pekat `#000000`, icy cyan `#00F0FF`, emerald `#10B981`, krypton violet `#7C3AED`, dengan aksen indigo `#4F46E5`.
 
@@ -30,10 +30,10 @@ Palet: hitam pekat `#000000`, icy cyan `#00F0FF`, emerald `#10B981`, krypton vio
 - [x] **Idle** — plasma core tiga lapis bernapas 0.25 Hz, ferrofluid cursor pull, corona berputar.
 - [x] **Closed** — battery ring 18 px, jam digital, live sound wave 5 batang dari FFT WASAPI loopback.
 - [x] **Music** — WinRT SMTC, album art, transport, seek slider, tombol buka aplikasi sumber.
-- [ ] **Lyrics** — LRCLIB + lirik tersinkron, melebar 560 px.
+- [x] **Lyrics** — LRCLIB + lirik tersinkron, melebar 580 px.
+- [x] **Shelf** — OLE drop target, carousel 5 item, thumbnail gambar, Clear, buka via ShellExecute.
 - [ ] **Focus** — Pomodoro in-notch + chime.
 - [ ] **Water** — target harian, gelombang cairan, pengingat.
-- [ ] **Shelf** — drag & drop OLE, carousel file/folder.
 - [ ] **To-do** — checklist cepat, strikethrough.
 - [ ] **HUD** — headphone connect & charging pop-up 3 detik.
 - [ ] **System** — tray icon, autostart, single instance, installer.
@@ -50,11 +50,13 @@ src/
 ├── state.rs          # Page/NotchMode, state.json atomik, normalisasi harian
 ├── system.rs         # GetSystemPowerStatus + geometri battery arc
 ├── media.rs          # worker SMTC MTA: metadata, artwork, transport, seek, buka sumber
+├── lyrics.rs         # LRCLIB, parser LRC, cache RAM/disk, window sinkronisasi
+├── shelf.rs          # OLE IDropTarget CF_HDROP, metadata file, thumbnail worker, persistensi
 ├── wave.rs           # WASAPI loopback + FFT radix-2 512 → 5 pita, atomik
 └── window_ext.rs     # Win32 overlay, hover, runtime 60 fps, playback clock, callbacks
 
 ui/
-└── appwindow.slint   # shell notch, silhouette Path, idle/closed/expanded, Music page
+└── appwindow.slint   # shell notch, silhouette Path, idle/closed/expanded, Music/Lyrics/Shelf
 
 assets/
 ├── icon.ico            # ikon executable
@@ -69,8 +71,8 @@ tools/
 
 **Prinsip geometri**
 
-- Kanvas native selalu **600 × 220 px** dan transparan; notch dianimasikan di dalamnya sehingga shadow/overshoot tidak terpotong.
-- Siluet notch digambar sebagai satu `Path` dinamis: telinga cekung 12 px di kiri/kanan atas, sudut bawah membulat 18 px.
+- Kanvas native selalu **680 × 250 px** dan transparan; notch dianimasikan di dalamnya sehingga shadow/overshoot tidak terpotong.
+- Siluet notch digambar sebagai satu `Path` dinamis dengan sudut bawah membulat 18 px; mode Stealth menyusut menjadi garis 184 × 5 px.
 - Transisi lebar/tinggi memakai **spring teredam** (`ζ ≈ 0.72`, `ω ≈ 17 rad/s`, semi-implicit Euler). Target bisa dibalik di tengah animasi, jadi notch langsung berbalik saat kursor masuk/keluar tanpa menunggu animasi selesai.
 - Window memakai `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`, selalu topmost, dan `WS_EX_TRANSPARENT` saat kursor di luar notch agar klik menembus ke aplikasi di bawahnya.
 - Animasi maskot dibatasi **~20 fps** (bukan vsync 60 fps) supaya CPU idle tetap rendah; morph shell tetap berjalan tiap tick timer 16 ms.
@@ -108,13 +110,18 @@ cargo build --release
 # hasil: target\release\kripton.exe
 ```
 
-## Kontrol (Sprint 2)
+## Kontrol (Sprint 4)
 
 | Aksi | Hasil |
 | --- | --- |
 | Media mulai diputar | Notch tertutup otomatis menampilkan battery ring, jam, dan live wave dari spectrum nyata |
 | Media berhenti / dijeda (±1.6 detik) | Kembali ke Idle dengan plasma core |
-| Arahkan kursor ke notch (60 ms) | Notch membesar ke 460 × 175 px, halaman Music menampilkan track aktif |
+| Arahkan kursor ke notch | Notch wake ke Compact Pill 360 × 36 px; klik untuk membuka shell 580 × 192 px |
+| Drag file/folder dari Explorer ke notch | Halaman Shelf terbuka otomatis, item ditambahkan ke carousel |
+| Double-click item Shelf | Membuka file/folder lewat `ShellExecute` |
+| Klik `×` pada item | Menghapus item dari rak |
+| Klik `Clear` | Mengosongkan rak dan `state.json` |
+| Klik `<` / `>` | Menggeser carousel Shelf (maksimum 5 item terlihat) |
 | Klik play/pause, prev, next | Mengirim perintah ke sesi SMTC aktif |
 | Klik/drag seek bar | Memindahkan posisi pemutaran; waktu berjalan diinterpolasi 60 fps |
 | Klik tombol `>` | Membuka aplikasi sumber (mis. Spotify) lewat AUMID |

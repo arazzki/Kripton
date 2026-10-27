@@ -3,6 +3,7 @@
 mod living;
 mod lyrics;
 mod media;
+mod shelf;
 mod spring;
 mod state;
 mod system;
@@ -48,10 +49,11 @@ fn main() -> Result<(), slint::PlatformError> {
     // thread never blocks on COM or audio.
     let media = media::MediaController::start();
     let audio = wave::AudioWave::start();
+    let shelf = shelf::ShelfManager::start(store.clone());
 
     window_ext::apply_mode(&app, window_ext::collapsed_mode());
     app.show()?;
-    window_ext::install_overlay(&app, media, audio, store.clone());
+    window_ext::install_overlay(&app, media, audio, shelf, store.clone());
 
     let _clock_timer = start_clock(&app);
     let _battery_timer = start_battery(&app);
@@ -69,9 +71,7 @@ fn apply_persisted_state(app: &AppWindow, store: &StateStore) {
     app.set_page_title(page.title().into());
     app.set_page_subtitle(page.subtitle().into());
     app.set_lyrics_enabled(store.with(|state| state.lyrics_enabled));
-    app.set_build_label(
-        format!("v{} · Sprint 3 · Synced Lyrics", env!("CARGO_PKG_VERSION")).into(),
-    );
+    app.set_build_label(format!("v{} · Sprint 4 · File Shelf", env!("CARGO_PKG_VERSION")).into());
 }
 
 fn wire_callbacks(app: &AppWindow, store: &StateStore) {

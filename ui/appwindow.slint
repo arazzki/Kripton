@@ -2,6 +2,16 @@
 // UI shell for PRD v2.0. The Rust runtime drives the spring geometry, the
 // plasma layers, the battery arc and the audio bars through these properties.
 
+export struct ShelfView {
+    name: string,
+    size-text: string,
+    is-directory: bool,
+    has-thumbnail: bool,
+    missing: bool,
+    thumbnail: image,
+    index: int,
+}
+
 export component AppWindow inherits Window {
     title: "Kripton";
     width: 680px;
@@ -83,6 +93,17 @@ export component AppWindow inherits Window {
     in-out property <float> seek-fraction: 0.0;
     in-out property <bool> seek-dragging: false;
 
+    // Shelf page (Sprint 4). The model only contains the visible carousel
+    // window (max 5); `index` keeps the global shelf position.
+    in property <[ShelfView]> shelf-items: [];
+    in property <int> shelf-start: 0;
+    in property <int> shelf-total: 0;
+    in property <bool> shelf-can-prev: false;
+    in property <bool> shelf-can-next: false;
+    in property <bool> shelf-drag-active: false;
+    in property <float> shelf-fade: 1.0;
+    in property <string> shelf-summary: "Shelf is empty";
+
     callback toggle-expand();
     callback page-selected(int);
     callback quit();
@@ -94,6 +115,10 @@ export component AppWindow inherits Window {
     callback media-seek-preview(float);
     callback media-seek-commit(float);
     callback lyrics-toggle();
+    callback shelf-nav(int);
+    callback shelf-clear();
+    callback shelf-open(int);
+    callback shelf-remove(int);
 
     // --- Design tokens ------------------------------------------------------
     private property <length> bottom-radius: root.stealth ? 2.5px : 18px;
@@ -1687,8 +1712,372 @@ export component AppWindow inherits Window {
 
                     }
 
+                    // --- Shelf page (Sprint 4) --------------------------------
+                    if root.active-page == 3: VerticalLayout {
+                        width: parent.width;
+                        height: parent.height;
+                        padding-left: 10px;
+                        padding-right: 10px;
+                        padding-top: 8px;
+                        padding-bottom: 6px;
+                        spacing: 5px;
+
+                        // Toolbar: item count + Clear capsule.
+                        HorizontalLayout {
+                            height: 20px;
+                            spacing: 8px;
+
+                            Text {
+                                text: root.shelf-summary;
+                                color: #6B7280;
+                                font-size: 8.5px;
+                                font-weight: 700;
+                                letter-spacing: 0.8px;
+                                vertical-alignment: center;
+                                overflow: TextOverflow.elide;
+                            }
+
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                background: transparent;
+                            }
+
+                            Rectangle {
+                                width: 46px;
+                                height: 20px;
+                                border-radius: 10px;
+                                background: #1F2937;
+                                opacity: root.shelf-total > 0 ? 1.0 : 0.35;
+
+                                Text {
+                                    text: "Clear";
+                                    color: #9CA3AF;
+                                    font-size: 9px;
+                                    font-weight: 600;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+
+                                TouchArea {
+                                    clicked => {
+                                        if (root.shelf-total > 0) {
+                                            root.shelf-clear();
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        // Carousel: < [items] >.
+                        HorizontalLayout {
+                            height: 96px;
+                            spacing: 6px;
+
+                            // Previous page.
+                            Rectangle {
+                                width: 28px;
+                                height: parent.height;
+                                background: transparent;
+
+                                Rectangle {
+                                    width: 28px;
+                                    height: 28px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 14px;
+                                    background: #262626;
+                                    opacity: root.shelf-can-prev ? 1.0 : 0.35;
+
+                                    Path {
+                                        width: 7px;
+                                        height: 11px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        viewbox-x: 0;
+                                        viewbox-y: 0;
+                                        viewbox-width: 7;
+                                        viewbox-height: 11;
+                                        fill: transparent;
+                                        stroke: root.shelf-can-prev ? #E5E7EB : #4B5563;
+                                        stroke-width: 1.6px;
+                                        stroke-line-cap: round;
+                                        MoveTo { x: 5.5; y: 1; }
+                                        LineTo { x: 1.5; y: 5.5; }
+                                        LineTo { x: 5.5; y: 10; }
+                                    }
+
+                                    TouchArea {
+                                        clicked => {
+                                            if (root.shelf-can-prev) {
+                                                root.shelf-nav(-1);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Viewport: empty state or the visible carousel slice.
+                            Rectangle {
+                                horizontal-stretch: 1;
+                                clip: true;
+                                background: transparent;
+
+                                if root.shelf-total == 0: Rectangle {
+                                    width: parent.width;
+                                    height: parent.height;
+                                    border-radius: 10px;
+                                    background: root.shelf-drag-active ? #00F0FF14 : #FFFFFF08;
+                                    border-width: 1px;
+                                    border-color: root.shelf-drag-active ? #00F0FF88 : #FFFFFF14;
+
+                                    VerticalLayout {
+                                        alignment: center;
+                                        spacing: 4px;
+
+                                        Rectangle {
+                                            height: 27px;
+                                            background: transparent;
+
+                                            Path {
+                                                width: 34px;
+                                                height: 27px;
+                                                x: (parent.width - self.width) / 2;
+                                                viewbox-x: 0;
+                                                viewbox-y: 0;
+                                                viewbox-width: 34;
+                                                viewbox-height: 27;
+                                                fill: transparent;
+                                                stroke: root.shelf-drag-active ? #00F0FF : #4B5563;
+                                                stroke-width: 1.6px;
+                                                stroke-line-cap: round;
+                                                MoveTo { x: 2; y: 6; }
+                                                LineTo { x: 11; y: 6; }
+                                                LineTo { x: 14; y: 9; }
+                                                LineTo { x: 32; y: 9; }
+                                                LineTo { x: 32; y: 25; }
+                                                LineTo { x: 2; y: 25; }
+                                                Close {}
+                                            }
+                                        }
+
+                                        Text {
+                                            text: root.shelf-drag-active ? "Release to add to Shelf" : "Drag files or folders here";
+                                            color: root.shelf-drag-active ? #00F0FF : #9CA3AF;
+                                            font-size: 11px;
+                                            font-weight: 600;
+                                            horizontal-alignment: center;
+                                        }
+
+                                        Text {
+                                            text: "Drop from Explorer · double-click to open";
+                                            color: #4B5563;
+                                            font-size: 8.5px;
+                                            horizontal-alignment: center;
+                                        }
+                                    }
+                                }
+
+                                if root.shelf-total > 0: HorizontalLayout {
+                                    width: parent.width;
+                                    height: 84px;
+                                    y: (parent.height - self.height) / 2;
+                                    alignment: center;
+                                    spacing: 5px;
+
+                                    for item in root.shelf-items: Rectangle {
+                                        width: 88px;
+                                        height: 84px;
+                                        background: transparent;
+                                        opacity: (item.missing ? 0.45 : 1.0) * root.shelf-fade;
+                                        animate opacity {
+                                            duration: 160ms;
+                                            easing: ease-out;
+                                        }
+
+                                        // 54 px preview: real thumbnail, folder or file icon.
+                                        Rectangle {
+                                            width: 54px;
+                                            height: 54px;
+                                            x: (parent.width - self.width) / 2;
+                                            y: 0px;
+                                            border-radius: 11px;
+                                            clip: true;
+                                            background: @linear-gradient(135deg, #1F2937 0%, #0B0B0E 100%);
+
+                                            if item.has-thumbnail: Image {
+                                                width: parent.width;
+                                                height: parent.height;
+                                                source: item.thumbnail;
+                                                image-fit: cover;
+                                            }
+
+                                            if !item.has-thumbnail && item.is-directory: Path {
+                                                width: 32px;
+                                                height: 26px;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                                viewbox-x: 0;
+                                                viewbox-y: 0;
+                                                viewbox-width: 32;
+                                                viewbox-height: 26;
+                                                fill: #FBBF24;
+                                                stroke: transparent;
+                                                MoveTo { x: 1; y: 5; }
+                                                LineTo { x: 11; y: 5; }
+                                                LineTo { x: 14; y: 8; }
+                                                LineTo { x: 31; y: 8; }
+                                                LineTo { x: 31; y: 25; }
+                                                LineTo { x: 1; y: 25; }
+                                                Close {}
+                                            }
+
+                                            if !item.has-thumbnail && !item.is-directory: Path {
+                                                width: 24px;
+                                                height: 30px;
+                                                x: (parent.width - self.width) / 2;
+                                                y: (parent.height - self.height) / 2;
+                                                viewbox-x: 0;
+                                                viewbox-y: 0;
+                                                viewbox-width: 24;
+                                                viewbox-height: 30;
+                                                fill: #60A5FA;
+                                                stroke: transparent;
+                                                MoveTo { x: 2; y: 1; }
+                                                LineTo { x: 15; y: 1; }
+                                                LineTo { x: 22; y: 8; }
+                                                LineTo { x: 22; y: 29; }
+                                                LineTo { x: 2; y: 29; }
+                                                Close {}
+                                            }
+
+                                            if !item.has-thumbnail && !item.is-directory: Path {
+                                                width: 7px;
+                                                height: 7px;
+                                                x: (parent.width + 4px) / 2;
+                                                y: (parent.height - 24px) / 2;
+                                                viewbox-x: 0;
+                                                viewbox-y: 0;
+                                                viewbox-width: 7;
+                                                viewbox-height: 7;
+                                                fill: #93C5FD;
+                                                stroke: transparent;
+                                                MoveTo { x: 0; y: 0; }
+                                                LineTo { x: 7; y: 7; }
+                                                LineTo { x: 0; y: 7; }
+                                                Close {}
+                                            }
+                                        }
+
+                                        Text {
+                                            y: 58px;
+                                            height: 12px;
+                                            width: parent.width;
+                                            text: item.name;
+                                            color: #F9FAFB;
+                                            font-size: 9.5px;
+                                            font-weight: 600;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                            overflow: TextOverflow.elide;
+                                        }
+
+                                        Text {
+                                            y: 70px;
+                                            height: 12px;
+                                            width: parent.width;
+                                            text: item.size-text;
+                                            color: item.missing ? #F87171 : #9CA3AF;
+                                            font-size: 8px;
+                                            horizontal-alignment: center;
+                                            vertical-alignment: center;
+                                        }
+
+                                        item-touch := TouchArea {
+                                            double-clicked => {
+                                                root.shelf-open(item.index);
+                                            }
+                                        }
+
+                                        // Remove badge.
+                                        Rectangle {
+                                            x: 58px;
+                                            y: 0px;
+                                            width: 14px;
+                                            height: 14px;
+                                            border-radius: 7px;
+                                            background: #0B0B0EE6;
+                                            border-width: 1px;
+                                            border-color: #FFFFFF2E;
+                                            opacity: item-touch.has-hover ? 1.0 : 0.55;
+                                            animate opacity {
+                                                duration: 120ms;
+                                                easing: ease-out;
+                                            }
+
+                                            Text {
+                                                text: "×";
+                                                color: #E5E7EB;
+                                                font-size: 10px;
+                                                font-weight: 700;
+                                                horizontal-alignment: center;
+                                                vertical-alignment: center;
+                                            }
+
+                                            TouchArea {
+                                                clicked => {
+                                                    root.shelf-remove(item.index);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            // Next page.
+                            Rectangle {
+                                width: 28px;
+                                height: parent.height;
+                                background: transparent;
+
+                                Rectangle {
+                                    width: 28px;
+                                    height: 28px;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: 14px;
+                                    background: #262626;
+                                    opacity: root.shelf-can-next ? 1.0 : 0.35;
+
+                                    Path {
+                                        width: 7px;
+                                        height: 11px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        viewbox-x: 0;
+                                        viewbox-y: 0;
+                                        viewbox-width: 7;
+                                        viewbox-height: 11;
+                                        fill: transparent;
+                                        stroke: root.shelf-can-next ? #E5E7EB : #4B5563;
+                                        stroke-width: 1.6px;
+                                        stroke-line-cap: round;
+                                        MoveTo { x: 1.5; y: 1; }
+                                        LineTo { x: 5.5; y: 5.5; }
+                                        LineTo { x: 1.5; y: 10; }
+                                    }
+
+                                    TouchArea {
+                                        clicked => {
+                                            if (root.shelf-can-next) {
+                                                root.shelf-nav(1);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     // --- Placeholder for later sprints -------------------------
-                    if root.active-page != 0: VerticalLayout {
+                    if root.active-page != 0 && root.active-page != 3: VerticalLayout {
                         padding-left: 14px;
                         padding-right: 14px;
                         padding-top: 10px;

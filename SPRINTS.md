@@ -8,8 +8,8 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 | 1 | Idle + Closed | Plasma core hidup, closed bar, spring physics | ✅ Selesai |
 | 2 | Music | WinRT SMTC, transport, seek, live wave WASAPI | ✅ Selesai |
 | 3 | Lyrics | LRCLIB, lirik sinkron, mode lebar 580 px | ✅ Selesai |
-| 4 | Shelf | Drag & drop OLE, carousel, preview file | ⏳ Berikutnya |
-| 5 | Productivity | Focus timer, Water, To-do | ⏳ |
+| 4 | Shelf | Drag & drop OLE, carousel, preview file | ✅ Selesai |
+| 5 | Productivity | Focus timer, Water, To-do | ⏳ Berikutnya |
 | 6 | HUD + Release | Headphone/charging HUD, tray, autostart, installer | ⏳ |
 
 ---
@@ -132,25 +132,33 @@ Acuan: [`PRD.md`](PRD.md). Setiap sprint berakhir dengan `cargo fmt`, `cargo cli
 
 ---
 
-## Sprint 4 — Shelf
+## Sprint 4 — Shelf ✅
 
 **Tujuan:** rak file drag & drop native.
 
-**Deliverables:**
+**Selesai:**
 
-1. OLE `IDropTarget` pada HWND notch (bukan WebView), menerima `CF_HDROP`.
-2. Ekstraksi path, nama, ukuran, tipe; ikon folder/file.
-3. Carousel horizontal 54 px preview, tombol `<`/`>` 28 px, tombol `Clear`.
-4. Aksi klik: buka file/folder via ShellExecute; aksi hapus item dari rak.
-5. Persistensi `shelf_items` (maksimum 20 item; file yang hilang ditandai).
-6. Empty state dan animasi masuk/keluar item.
+1. **OLE `IDropTarget` native** — `src/shelf.rs` mengimplementasikan `IDropTarget` dengan `#[implement]` dan mendaftarkannya ke HWND notch lewat `RegisterDragDrop` pada STA UI. `DragEnter`/`DragOver`/`Drop` memakai `FORMATETC` `CF_HDROP` + `TYMED_HGLOBAL`; callback hanya menaruh path di antrean, jadi drag dari Explorer tidak memblokir render.
+2. **Auto-open Shelf** — `DragEnter` menyalakan flag `open_requested`; runtime tick berikutnya membuka halaman Shelf dan mengekspansi notch, lalu `DragLeave`/`Drop` mematikan indikator drop.
+3. **Ekstraksi metadata** — `DragQueryFileW` membaca semua path, `std::fs::metadata` mengisi nama, ukuran terformat (`512 B`, `2.4 MB`, `5.00 GB`), dan status folder. Path duplikat (case-insensitive) diabaikan; rak dibatasi 20 item dan item tertua keluar lebih dulu.
+4. **Carousel 54 px** — model Slint `[ShelfView]` hanya berisi jendela 5 item yang terlihat; tombol `<`/`>` 28 px menggeser `shelf-start`, tombol `Clear` mengosongkan rak. Thumbnail gambar didekode di worker `kripton-shelf-thumbs` (108 px, RGBA) agar UI tidak menunggu disk.
+5. **Ikon, empty state, animasi masuk** — thumbnail asli untuk PNG/JPEG/WebP, ikon folder kuning, ikon dokumen biru, empty state yang berubah warna saat drag aktif, dan item memudar masuk lewat properti `shelf-fade` (0 → 1, 160 ms ease-out) setiap model dibangun ulang.
+6. **Interaksi** — double-click item membuka file/folder lewat `ShellExecuteW`; badge `×` menghapus satu item; path yang hilang ditandai `Missing` dan dibersihkan saat startup berikutnya.
+7. **Persistensi** — `state.json` menyimpan `shelf_items` (nama, path, tipe, ukuran, `size_formatted`) dan langsung ditulis ulang setiap add/remove/clear.
 
-**Acceptance:**
+**Acceptance terverifikasi:**
 
-- Drag file dari Explorer ke notch menambah item tanpa memblokir UI.
-- Rak bertahan setelah restart; path yang hilang dibersihkan.
-- Clear mengosongkan rak + state.
-- Tidak ada crash saat drag banyak file sekaligus.
+- Drop target terdaftar sukses di HWND notch (`shelf drop target registered` di `kripton.log`).
+- 33 unit test lulus 100% (`cargo test`), termasuk format ukuran, clamp carousel, deteksi ekstensi gambar, dan perbandingan path case-insensitive.
+- `cargo fmt --check` dan `cargo clippy --all-targets -- -D warnings` bersih.
+- Empty state, carousel, Clear, dan badge hapus dirender pada notch 580 × 192 px (screenshot smoke test).
+
+**Known limitations:**
+
+- Drag-out (`IDropSource`) ke aplikasi lain belum diimplementasikan; Sprint 4 hanya mencakup drop-in sesuai deliverables. Drag-out tetap kandidat Sprint 6.
+- Thumbnail untuk format selain PNG/JPEG/WebP memakai ikon dokumen generik (fitur `image` yang diaktifkan hanya tiga codec tersebut).
+- Cabut/pindah file saat aplikasi berjalan baru terdeteksi sebagai `Missing`; pembersihan permanen terjadi saat restart.
+- Animasi keluar per item belum ada: item yang dihapus langsung hilang, lalu item tersisa memudar masuk ulang.
 
 ---
 

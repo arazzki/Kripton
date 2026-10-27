@@ -8,7 +8,7 @@ use std::{
 };
 
 use raw_window_handle::{HasWindowHandle, RawWindowHandle};
-use slint::{ComponentHandle, Timer, TimerMode, Weak};
+use slint::{ComponentHandle, ModelRc, Timer, TimerMode, VecModel, Weak};
 use windows::{
     core::w,
     Win32::{
@@ -32,10 +32,11 @@ use windows::{
 use crate::{
     living::{Living, LivingFrame},
     media::{self, Artwork, MediaController},
+    shelf::{self, ShelfManager, ShelfThumb},
     spring::{Spring, SpringConfig},
-    state::NotchMode,
+    state::{NotchMode, Page},
     wave::AudioWave,
-    AppWindow,
+    AppWindow, ShelfView,
 };
 
 const HOVER_CLOSE_DELAY: Duration = Duration::from_millis(350);
@@ -148,6 +149,10 @@ impl OverlayWindow {
                 SWP_NOSIZE | SWP_NOACTIVATE | SWP_SHOWWINDOW,
             )
         };
+    }
+
+    pub fn hwnd(&self) -> HWND {
+        self.hwnd
     }
 
     pub fn set_click_through(&self, enabled: bool) {
@@ -270,9 +275,10 @@ pub fn install_overlay(
     app: &AppWindow,
     media: MediaController,
     audio: AudioWave,
+    shelf: ShelfManager,
     store: crate::state::StateStore,
 ) {
-    try_attach(app.as_weak(), 0, media, Arc::new(audio), store);
+    try_attach(app.as_weak(), 0, media, Arc::new(audio), shelf, store);
 }
 
 fn try_attach(
@@ -280,6 +286,7 @@ fn try_attach(
     attempts: u32,
     media: MediaController,
     audio: Arc<AudioWave>,
+    shelf: ShelfManager,
     store: crate::state::StateStore,
 ) {
     Timer::single_shot(Duration::from_millis(16), move || {
@@ -288,13 +295,14 @@ fn try_attach(
         };
 
         if let Some(overlay) = OverlayWindow::attach(&app) {
-            install_runtime(&app, overlay, media, audio, store);
+            install_runtime(&app, overlay, media, audio, shelf, store);
         } else if attempts < 120 {
             try_attach(
                 app.as_weak(),
                 attempts + 1,
                 media.clone(),
                 audio.clone(),
+                shelf.clone(),
                 store,
             );
         } else {
@@ -344,6 +352,11 @@ struct Runtime {
     last_lyrics_track: String,
     last_synced_line: Option<String>,
     store: crate::state::StateStore,
+    shelf: ShelfManager,
+    shelf_start: usize,
+    shelf_revision: u64,
+    shelf_drag: bool,
+    shelf_fade_at: Option<Instant>,
 }
 
 fn install_runtime(
@@ -351,6 +364,7 @@ fn install_runtime(
     overlay: OverlayWindow,
     media: MediaController,
     audio: Arc<AudioWave>,
+    shelf: ShelfManager,
     store: crate::state::StateStore,
 ) {
     let weak = app.as_weak();
@@ -378,9 +392,25 @@ fn install_runtime(
         last_lyrics_track: String::new(),
         last_synced_line: None,
         store,
+        shelf,
+        shelf_start: 0,
+        shelf_revision: 0,
+        shelf_drag: false,
+        shelf_fade_at: None,
     }));
 
     install_media_callbacks(app, &runtime);
+    install_shelf_callbacks(app, &runtime);
+
+    match shelf::register_drop_target(overlay.hwnd(), runtime.borrow().shelf.clone()) {
+        Ok(()) => crate::log_line("shelf drop target registered"),
+        Err(error) => {
+            crate::log_line(&format!(
+                "failed to register the shelf drop target: {error}"
+            ));
+            eprintln!("[Kripton] failed to register the shelf drop target: {error}");
+        }
+    }
 
     let mut living = Living::new();
     let runtime_for_timer = runtime.clone();
@@ -403,6 +433,31 @@ fn install_runtime(
         if now.duration_since(runtime.last_media_poll) >= MEDIA_POLL_INTERVAL {
             runtime.last_media_poll = now;
             poll_media(&app, &mut runtime, now);
+        }
+
+        // Shelf: drain OLE drops, honour an auto-open request, then refresh
+        // the Slint model when entries or thumbnails changed.
+        let pending = runtime.shelf.take_pending();
+        if !pending.is_empty() {
+            runtime.shelf.add_paths(pending);
+            runtime.shelf_start = runtime.shelf.len().saturating_sub(shelf::VISIBLE_ITEMS);
+        }
+        if runtime.shelf.take_open_request() {
+            open_shelf_page(&app, &mut runtime);
+        }
+        let drag_active = runtime.shelf.drag_active();
+        if runtime.shelf_drag != drag_active {
+            runtime.shelf_drag = drag_active;
+            app.set_shelf_drag_active(drag_active);
+        }
+        if runtime.shelf.revision() != runtime.shelf_revision {
+            rebuild_shelf(&app, &mut runtime);
+        }
+        if let Some(fade_at) = runtime.shelf_fade_at {
+            if now.duration_since(fade_at) >= Duration::from_millis(30) {
+                app.set_shelf_fade(1.0);
+                runtime.shelf_fade_at = None;
+            }
         }
 
         // Advance the geometry spring every tick for 60 fps morphs.
@@ -570,6 +625,129 @@ fn install_media_callbacks(app: &AppWindow, runtime: &Rc<RefCell<Runtime>>) {
             }
         }
     });
+}
+
+fn install_shelf_callbacks(app: &AppWindow, runtime: &Rc<RefCell<Runtime>>) {
+    let runtime_nav = runtime.clone();
+    let weak_nav = app.as_weak();
+    app.on_shelf_nav(move |delta| {
+        let Some(app) = weak_nav.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_nav.borrow_mut();
+        let len = runtime.shelf.len();
+        let requested = (runtime.shelf_start as i32 + delta).max(0) as usize;
+        runtime.shelf_start = shelf::clamp_start(requested, len);
+        rebuild_shelf(&app, &mut runtime);
+    });
+
+    let runtime_clear = runtime.clone();
+    let weak_clear = app.as_weak();
+    app.on_shelf_clear(move || {
+        let Some(app) = weak_clear.upgrade() else {
+            return;
+        };
+        let mut runtime = runtime_clear.borrow_mut();
+        runtime.shelf.clear();
+        runtime.shelf_start = 0;
+        rebuild_shelf(&app, &mut runtime);
+    });
+
+    let runtime_remove = runtime.clone();
+    let weak_remove = app.as_weak();
+    app.on_shelf_remove(move |index| {
+        let Some(app) = weak_remove.upgrade() else {
+            return;
+        };
+        if index < 0 {
+            return;
+        }
+        let mut runtime = runtime_remove.borrow_mut();
+        runtime.shelf.remove(index as usize);
+        rebuild_shelf(&app, &mut runtime);
+    });
+
+    let runtime_open = runtime.clone();
+    app.on_shelf_open(move |index| {
+        if index < 0 {
+            return;
+        }
+        let path = runtime_open.borrow().shelf.item_path(index as usize);
+        if let Some(path) = path {
+            shelf::open_path(&path);
+        }
+    });
+}
+
+fn open_shelf_page(app: &AppWindow, runtime: &mut Runtime) {
+    let page = Page::Shelf;
+    if app.get_active_page() != page.index() as i32 {
+        app.set_active_page(page.index() as i32);
+        app.set_page_title(page.title().into());
+        app.set_page_subtitle(page.subtitle().into());
+        runtime
+            .store
+            .update(|state| state.active_page = page.index());
+    }
+    apply_mode(app, NotchMode::Expanded);
+}
+
+fn rebuild_shelf(app: &AppWindow, runtime: &mut Runtime) {
+    let snapshot = runtime.shelf.snapshot();
+    let len = snapshot.items.len();
+    runtime.shelf_start = shelf::clamp_start(runtime.shelf_start, len);
+    let start = runtime.shelf_start;
+    let end = (start + shelf::VISIBLE_ITEMS).min(len);
+
+    let views: Vec<ShelfView> = snapshot.items[start..end]
+        .iter()
+        .enumerate()
+        .map(|(offset, item)| ShelfView {
+            name: item.name.clone().into(),
+            size_text: if item.missing {
+                "Missing".into()
+            } else {
+                item.size_text.clone().into()
+            },
+            is_directory: item.is_directory,
+            has_thumbnail: snapshot.thumbs.contains_key(&item.path),
+            missing: item.missing,
+            thumbnail: snapshot
+                .thumbs
+                .get(&item.path)
+                .map(shelf_thumb_image)
+                .unwrap_or_default(),
+            index: (start + offset) as i32,
+        })
+        .collect();
+
+    // Restart the fade so new/updated entries ease in instead of popping.
+    app.set_shelf_fade(0.0);
+    app.set_shelf_items(ModelRc::new(VecModel::from(views)));
+    app.set_shelf_start(start as i32);
+    app.set_shelf_total(len as i32);
+    app.set_shelf_can_prev(start > 0);
+    app.set_shelf_can_next(start + shelf::VISIBLE_ITEMS < len);
+    app.set_shelf_summary(shelf_summary(len).into());
+    runtime.shelf_fade_at = Some(Instant::now());
+    runtime.shelf_revision = snapshot.revision;
+}
+
+fn shelf_summary(len: usize) -> String {
+    match len {
+        0 => "Shelf is empty".to_string(),
+        1 => "1 item · drop more files".to_string(),
+        count => format!("{count} items · drop more files"),
+    }
+}
+
+fn shelf_thumb_image(thumb: &ShelfThumb) -> slint::Image {
+    let buffer = slint::SharedPixelBuffer::<slint::Rgba8Pixel>::clone_from_slice(
+        &thumb.rgba,
+        thumb.width,
+        thumb.height,
+    );
+    slint::Image::from_rgba8(buffer)
 }
 
 fn app_show_position(weak: &Weak<AppWindow>, fraction: f32, position: u64, duration: u64) {
