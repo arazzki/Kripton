@@ -20,14 +20,19 @@ use windows::{
             },
             Gdi::{GetMonitorInfoW, MonitorFromPoint, MONITORINFO, MONITOR_DEFAULTTOPRIMARY},
         },
-        System::Threading::CreateMutexW,
+        System::{
+            Com::{CoCreateInstance, CLSCTX_ALL},
+            Threading::CreateMutexW,
+        },
         UI::{
             Input::KeyboardAndMouse::SetFocus,
+            Shell::{ITaskbarList, TaskbarList},
             WindowsAndMessaging::{
                 GetCursorPos, GetWindowLongPtrW, GetWindowRect, SetForegroundWindow,
                 SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_TOPMOST,
-                SWP_NOACTIVATE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNOACTIVATE,
-                WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
+                SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNOACTIVATE, WS_EX_APPWINDOW, WS_EX_LAYERED,
+                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
             },
         },
     },
@@ -96,6 +101,18 @@ pub struct OverlayWindow {
     hwnd: HWND,
 }
 
+unsafe fn delete_taskbar_tab(hwnd: HWND) {
+    if let Ok(taskbar) = CoCreateInstance::<_, ITaskbarList>(&TaskbarList, None, CLSCTX_ALL) {
+        if taskbar.HrInit().is_ok() {
+            let _ = taskbar.DeleteTab(hwnd);
+        }
+    }
+}
+
+fn strip_taskbar_exstyle(exstyle: u32) -> u32 {
+    (exstyle & !WS_EX_APPWINDOW.0) | WS_EX_TOOLWINDOW.0
+}
+
 impl OverlayWindow {
     pub fn attach(app: &AppWindow) -> Option<Self> {
         let window_handle = app.window().window_handle();
@@ -106,11 +123,26 @@ impl OverlayWindow {
         let hwnd = HWND(win32.hwnd.get() as *mut c_void);
 
         unsafe {
+            // Changing taskbar-related extended styles on an already-visible
+            // window only takes effect cleanly across a hide/show transition
+            // paired with ITaskbarList::DeleteTab.
+            let _ = ShowWindow(hwnd, SW_HIDE);
+
             let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
-            let wanted = current | WS_EX_TOOLWINDOW.0 | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0;
+            let wanted = strip_taskbar_exstyle(current) | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0;
             if wanted != current {
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted as isize);
             }
+            let _ = SetWindowPos(
+                hwnd,
+                None,
+                0,
+                0,
+                0,
+                0,
+                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
+            );
+            delete_taskbar_tab(hwnd);
 
             // Windows 11 rounds popup corners by default, which would visibly
             // cut the notch canvas. Keep the native window square.
@@ -126,7 +158,21 @@ impl OverlayWindow {
         let overlay = Self { hwnd };
         overlay.reposition();
         overlay.set_click_through(true);
+        unsafe {
+            delete_taskbar_tab(hwnd);
+        }
         Some(overlay)
+    }
+
+    pub fn hide_from_taskbar(&self) {
+        unsafe {
+            let current = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) as u32;
+            let wanted = strip_taskbar_exstyle(current);
+            if wanted != current {
+                SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, wanted as isize);
+            }
+            delete_taskbar_tab(self.hwnd);
+        }
     }
 
     pub fn reposition(&self) {
@@ -170,21 +216,26 @@ impl OverlayWindow {
     /// `ComponentHandle::hide`, because Slint releases its event-loop keepalive
     /// when the last window is hidden and the tray would stop working.
     pub fn set_visible(&self, visible: bool) {
+        if visible {
+            self.hide_from_taskbar();
+        }
         unsafe {
             let _ = ShowWindow(self.hwnd, if visible { SW_SHOWNOACTIVATE } else { SW_HIDE });
         }
         if visible {
             self.reposition();
+            self.hide_from_taskbar();
         }
     }
 
     pub fn set_click_through(&self, enabled: bool) {
         unsafe {
             let current = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) as u32;
+            let base = strip_taskbar_exstyle(current);
             let wanted = if enabled {
-                current | WS_EX_TRANSPARENT.0
+                base | WS_EX_TRANSPARENT.0
             } else {
-                current & !WS_EX_TRANSPARENT.0
+                base & !WS_EX_TRANSPARENT.0
             };
             if wanted != current {
                 SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, wanted as isize);
@@ -195,10 +246,11 @@ impl OverlayWindow {
     pub fn set_activatable(&self, enabled: bool) {
         unsafe {
             let current = GetWindowLongPtrW(self.hwnd, GWL_EXSTYLE) as u32;
+            let base = strip_taskbar_exstyle(current);
             let wanted = if enabled {
-                current & !WS_EX_NOACTIVATE.0
+                base & !WS_EX_NOACTIVATE.0
             } else {
-                current | WS_EX_NOACTIVATE.0
+                base | WS_EX_NOACTIVATE.0
             };
             if wanted != current {
                 SetWindowLongPtrW(self.hwnd, GWL_EXSTYLE, wanted as isize);
@@ -206,6 +258,7 @@ impl OverlayWindow {
             if enabled {
                 let _ = SetForegroundWindow(self.hwnd);
                 let _ = SetFocus(Some(self.hwnd));
+                delete_taskbar_tab(self.hwnd);
             }
         }
     }
@@ -327,11 +380,16 @@ pub fn install_overlay(
     tray: TrayController,
     headphone: HeadphoneWatcher,
 ) {
+    let audio = Arc::new(audio);
+    if let Some(overlay) = OverlayWindow::attach(app) {
+        install_runtime(app, overlay, media, audio, shelf, store, tray, headphone);
+        return;
+    }
     try_attach(
         app.as_weak(),
         0,
         media,
-        Arc::new(audio),
+        audio,
         shelf,
         store,
         tray,
@@ -730,6 +788,9 @@ fn drain_tray_actions(app: &AppWindow, runtime: &mut Runtime, overlay: OverlayWi
                     .update(|state| state.water_tracker.daily_goal_ml = goal);
                 runtime.tray.set_water_goal(goal);
                 sync_water_ui(app, runtime);
+            }
+            TrayAction::RefreshTaskbar => {
+                overlay.hide_from_taskbar();
             }
             TrayAction::Quit => {
                 runtime.tray.shutdown();
@@ -1588,4 +1649,19 @@ pub fn lock_hover_until_leave() {
 pub fn acquire_single_instance() -> bool {
     let _mutex = unsafe { CreateMutexW(None, true, w!("Local\\Kripton.SingleInstance")) };
     unsafe { GetLastError() != ERROR_ALREADY_EXISTS }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_taskbar_exstyle_clears_appwindow_and_sets_toolwindow() {
+        let initial = WS_EX_APPWINDOW.0 | WS_EX_LAYERED.0 | WS_EX_NOACTIVATE.0;
+        let cleaned = strip_taskbar_exstyle(initial);
+        assert_eq!(cleaned & WS_EX_APPWINDOW.0, 0);
+        assert_ne!(cleaned & WS_EX_TOOLWINDOW.0, 0);
+        assert_ne!(cleaned & WS_EX_LAYERED.0, 0);
+        assert_ne!(cleaned & WS_EX_NOACTIVATE.0, 0);
+    }
 }

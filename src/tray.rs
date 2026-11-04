@@ -59,6 +59,7 @@ pub enum TrayAction {
     SetAutostart(bool),
     SetLyrics(bool),
     SetWaterGoal(u32),
+    RefreshTaskbar,
     Quit,
 }
 
@@ -352,6 +353,7 @@ unsafe extern "system" fn tray_wndproc(
         _ => {
             if shared.taskbar_created != 0 && message == shared.taskbar_created {
                 add_icon(hwnd);
+                shared.push(TrayAction::RefreshTaskbar);
             }
             DefWindowProcW(hwnd, message, wparam, lparam)
         }
