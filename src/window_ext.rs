@@ -30,9 +30,9 @@ use windows::{
             WindowsAndMessaging::{
                 GetCursorPos, GetWindowLongPtrW, GetWindowRect, SetForegroundWindow,
                 SetWindowLongPtrW, SetWindowPos, ShowWindow, GWL_EXSTYLE, HWND_TOPMOST,
-                SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_NOZORDER,
-                SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNOACTIVATE, WS_EX_APPWINDOW, WS_EX_LAYERED,
-                WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW, WS_EX_TRANSPARENT,
+                SWP_NOACTIVATE, SWP_NOSIZE, SWP_SHOWWINDOW, SW_HIDE, SW_SHOWNOACTIVATE,
+                WS_EX_APPWINDOW, WS_EX_LAYERED, WS_EX_NOACTIVATE, WS_EX_TOOLWINDOW,
+                WS_EX_TRANSPARENT,
             },
         },
     },
@@ -123,25 +123,11 @@ impl OverlayWindow {
         let hwnd = HWND(win32.hwnd.get() as *mut c_void);
 
         unsafe {
-            // Changing taskbar-related extended styles on an already-visible
-            // window only takes effect cleanly across a hide/show transition
-            // paired with ITaskbarList::DeleteTab.
-            let _ = ShowWindow(hwnd, SW_HIDE);
-
             let current = GetWindowLongPtrW(hwnd, GWL_EXSTYLE) as u32;
             let wanted = strip_taskbar_exstyle(current) | WS_EX_NOACTIVATE.0 | WS_EX_LAYERED.0;
             if wanted != current {
                 SetWindowLongPtrW(hwnd, GWL_EXSTYLE, wanted as isize);
             }
-            let _ = SetWindowPos(
-                hwnd,
-                None,
-                0,
-                0,
-                0,
-                0,
-                SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-            );
             delete_taskbar_tab(hwnd);
 
             // Windows 11 rounds popup corners by default, which would visibly
@@ -161,6 +147,7 @@ impl OverlayWindow {
         unsafe {
             delete_taskbar_tab(hwnd);
         }
+        app.window().request_redraw();
         Some(overlay)
     }
 
@@ -380,16 +367,11 @@ pub fn install_overlay(
     tray: TrayController,
     headphone: HeadphoneWatcher,
 ) {
-    let audio = Arc::new(audio);
-    if let Some(overlay) = OverlayWindow::attach(app) {
-        install_runtime(app, overlay, media, audio, shelf, store, tray, headphone);
-        return;
-    }
     try_attach(
         app.as_weak(),
         0,
         media,
-        audio,
+        Arc::new(audio),
         shelf,
         store,
         tray,
@@ -759,6 +741,7 @@ fn drain_tray_actions(app: &AppWindow, runtime: &mut Runtime, overlay: OverlayWi
                 runtime.tray.set_visible(runtime.window_visible);
                 if runtime.window_visible {
                     apply_mode(app, collapsed_mode());
+                    app.window().request_redraw();
                 }
             }
             TrayAction::SetAutostart(enabled) => {
