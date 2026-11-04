@@ -211,7 +211,7 @@ unsafe fn add_icon(hwnd: HWND) {
         ..Default::default()
     };
 
-    let tip: Vec<u16> = std::ffi::OsStr::new("Kripton - native notch")
+    let tip: Vec<u16> = std::ffi::OsStr::new("Kripton")
         .encode_wide()
         .take(data.szTip.len() - 1)
         .collect();

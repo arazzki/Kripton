@@ -7,7 +7,7 @@ fn main() {
         resource
             .set_icon("assets/icon.ico")
             .set("ProductName", "Kripton")
-            .set("FileDescription", "Kripton — Native Windows Living Notch")
+            .set("FileDescription", "Kripton")
             .set("CompanyName", "Kripton")
             .set("LegalCopyright", "Copyright © 2026 Kripton")
             .set("OriginalFilename", "kripton.exe");
