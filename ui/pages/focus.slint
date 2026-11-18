@@ -1,0 +1,422 @@
+import { Theme } from "../theme.slint";
+
+component AdjustMinutePill inherits Rectangle {
+    in property <string> label: "-5";
+    in property <bool> at-limit: false;
+    callback clicked();
+
+    width: 36px;
+    height: 30px;
+    background: transparent;
+
+    private property <length> inset: adj-touch.pressed ? 1px : 0px;
+
+    Rectangle {
+        x: root.inset;
+        y: root.inset;
+        width: parent.width - root.inset * 2;
+        height: parent.height - root.inset * 2;
+        border-radius: 9px;
+        background: adj-touch.pressed
+            ? Theme.glass-pill-press
+            : (adj-touch.has-hover ? Theme.glass-pill-hover : Theme.glass-pill);
+        border-width: 1px;
+        border-color: adj-touch.has-hover ? Theme.glass-rim : Theme.glass-rim-subtle;
+        opacity: root.at-limit ? 0.45 : 1.0;
+
+        animate x, y, width, height, background, border-color, opacity {
+            duration: 160ms;
+            easing: ease-out;
+        }
+
+        Text {
+            width: parent.width;
+            height: parent.height;
+            text: root.label;
+            color: adj-touch.has-hover ? Theme.ink : Theme.ink-2;
+            font-size: 11px;
+            font-weight: 600;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+
+            animate color {
+                duration: 160ms;
+                easing: ease-out;
+            }
+        }
+    }
+
+    adj-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component FocusPage inherits Rectangle {
+    in property <int> focus-minutes: 25;
+    in property <string> focus-remaining: "25:00";
+    in property <float> focus-progress: 0.0;
+    in property <bool> focus-running: false;
+    in property <bool> focus-active: false;
+    in property <bool> focus-celebrate: false;
+    in property <string> focus-session: "Focus session #1";
+    in property <int> focus-completed: 0;
+
+    callback focus-toggle();
+    callback focus-reset();
+    callback focus-preset(int);
+    callback focus-adjust(int);
+
+    preferred-width: 452px;
+    preferred-height: 104px;
+    background: transparent;
+
+    private property <[int]> focus-presets: [15, 25, 45, 60];
+    private property <int> active-preset-idx: root.focus-minutes == 15 ? 0 : (root.focus-minutes == 25 ? 1 : (root.focus-minutes == 45 ? 2 : (root.focus-minutes == 60 ? 3 : -1)));
+    private property <float> display-progress: clamp(root.focus-progress, 0.0, 1.0);
+
+    animate display-progress {
+        duration: root.focus-running ? 60ms : 200ms;
+        easing: ease-out;
+    }
+
+    HorizontalLayout {
+        width: parent.width;
+        height: parent.height;
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 14px;
+
+        // Left: 90x90 circular Focus Progress Ring (no radial halo blob)
+        Rectangle {
+            width: 92px;
+            background: transparent;
+
+            Rectangle {
+                width: 90px;
+                height: 90px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                background: transparent;
+
+                // Frosted circular track
+                Path {
+                    width: parent.width;
+                    height: parent.height;
+                    viewbox-x: 0;
+                    viewbox-y: 0;
+                    viewbox-width: 88;
+                    viewbox-height: 88;
+                    fill: transparent;
+                    stroke: #FFFFFF1A;
+                    stroke-width: 4.5px;
+                    MoveTo { x: 44; y: 7; }
+                    ArcTo { radius-x: 37; radius-y: 37; large-arc: false; sweep: true; x: 44; y: 81; }
+                    ArcTo { radius-x: 37; radius-y: 37; large-arc: false; sweep: true; x: 44; y: 7; }
+                }
+
+                // Pure white progress arc (emerald only during focus-celebrate)
+                if root.display-progress > 0.002 && root.display-progress < 0.999: progress-arc := Path {
+                    private property <float> arc-deg: root.display-progress * 360.0;
+                    private property <angle> arc-angle: (self.arc-deg - 90.0) * 1deg;
+                    private property <float> arc-x: 44.0 + 37.0 * Math.cos(self.arc-angle);
+                    private property <float> arc-y: 44.0 + 37.0 * Math.sin(self.arc-angle);
+
+                    width: parent.width;
+                    height: parent.height;
+                    viewbox-x: 0;
+                    viewbox-y: 0;
+                    viewbox-width: 88;
+                    viewbox-height: 88;
+                    fill: transparent;
+                    stroke: root.focus-celebrate ? Theme.success : #FFFFFFE8;
+                    stroke-width: 4.5px;
+                    stroke-line-cap: round;
+
+                    animate stroke {
+                        duration: 220ms;
+                        easing: ease-out;
+                    }
+
+                    MoveTo { x: 44; y: 7; }
+                    ArcTo {
+                        radius-x: 37;
+                        radius-y: 37;
+                        large-arc: progress-arc.arc-deg > 180.0;
+                        sweep: true;
+                        x: progress-arc.arc-x;
+                        y: progress-arc.arc-y;
+                    }
+                }
+
+                if root.display-progress >= 0.999: Path {
+                    width: parent.width;
+                    height: parent.height;
+                    viewbox-x: 0;
+                    viewbox-y: 0;
+                    viewbox-width: 88;
+                    viewbox-height: 88;
+                    fill: transparent;
+                    stroke: root.focus-celebrate ? Theme.success : #FFFFFFE8;
+                    stroke-width: 4.5px;
+                    MoveTo { x: 44; y: 7; }
+                    ArcTo { radius-x: 37; radius-y: 37; large-arc: false; sweep: true; x: 44; y: 81; }
+                    ArcTo { radius-x: 37; radius-y: 37; large-arc: false; sweep: true; x: 44; y: 7; }
+                }
+
+                // Centered 18.5px countdown + 9.5px phase label
+                VerticalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    alignment: center;
+                    spacing: 1px;
+
+                    Text {
+                        text: root.focus-remaining;
+                        color: #FFFFFF;
+                        font-size: 18.5px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                    }
+
+                    Text {
+                        text: root.focus-running ? "Focusing" : "Ready";
+                        color: root.focus-celebrate ? Theme.success : (root.focus-running ? #FFFFFFD8 : Theme.ink-3);
+                        font-size: 9.5px;
+                        font-weight: 600;
+                        horizontal-alignment: center;
+
+                        animate color {
+                            duration: 180ms;
+                            easing: ease-out;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Right controls column (92px tall, spacing 6px)
+        VerticalLayout {
+            horizontal-stretch: 1;
+            height: 92px;
+            alignment: space-between;
+            spacing: 6px;
+
+            // Top row: session label, plain muted completed count, Reset white glass pill
+            HorizontalLayout {
+                height: 18px;
+                spacing: 8px;
+
+                Text {
+                    min-width: 0px;
+                    text: root.focus-session;
+                    color: Theme.ink;
+                    font-size: 12px;
+                    font-weight: 600;
+                    vertical-alignment: center;
+                    overflow: TextOverflow.elide;
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: transparent;
+                }
+
+                Text {
+                    text: "\{root.focus-completed} done";
+                    color: #FFFFFF80;
+                    font-size: 10px;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                }
+
+                // Animated Reset white glass pill
+                Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    width: 42px;
+                    height: 18px;
+                    border-radius: 9px;
+                    background: reset-touch.pressed
+                        ? Theme.glass-pill-press
+                        : (reset-touch.has-hover ? Theme.glass-pill-hover : Theme.glass-pill);
+                    border-width: 1px;
+                    border-color: reset-touch.has-hover ? Theme.glass-rim : Theme.glass-rim-subtle;
+
+                    animate background, border-color {
+                        duration: 160ms;
+                        easing: ease-out;
+                    }
+
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: "Reset";
+                        color: reset-touch.has-hover ? Theme.ink : Theme.ink-2;
+                        font-size: 9.5px;
+                        font-weight: 500;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+
+                        animate color {
+                            duration: 160ms;
+                            easing: ease-out;
+                        }
+                    }
+
+                    reset-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.focus-reset();
+                        }
+                    }
+                }
+            }
+
+            // Middle row: Hero frosted white Start/Pause button + -5 / +5 adjust pills
+            HorizontalLayout {
+                height: 30px;
+                spacing: 6px;
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    height: 30px;
+                    background: transparent;
+
+                    private property <length> hero-inset: start-touch.pressed ? 1px : 0px;
+
+                    Rectangle {
+                        x: parent.hero-inset;
+                        y: parent.hero-inset;
+                        width: parent.width - parent.hero-inset * 2;
+                        height: parent.height - parent.hero-inset * 2;
+                        border-radius: 9px;
+                        background: root.focus-running
+                            ? (start-touch.pressed ? #FFFFFF1E : (start-touch.has-hover ? #FFFFFF32 : #FFFFFF20))
+                            : (start-touch.pressed ? #FFFFFF1E : (start-touch.has-hover ? #FFFFFF38 : #FFFFFF28));
+                        border-width: 1px;
+                        border-color: start-touch.has-hover ? #FFFFFF60 : #FFFFFF4A;
+
+                        animate x, y, width, height, background, border-color {
+                            duration: 160ms;
+                            easing: ease-out;
+                        }
+
+                        Text {
+                            width: parent.width;
+                            height: parent.height;
+                            text: root.focus-running ? "Pause session" : "Start focus";
+                            color: #FFFFFF;
+                            font-size: 12px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    start-touch := TouchArea {
+                        mouse-cursor: pointer;
+                        clicked => {
+                            root.focus-toggle();
+                        }
+                    }
+                }
+
+                AdjustMinutePill {
+                    label: "-5";
+                    at-limit: root.focus-minutes <= 5;
+                    clicked => {
+                        root.focus-adjust(-5);
+                    }
+                }
+
+                AdjustMinutePill {
+                    label: "+5";
+                    at-limit: root.focus-minutes >= 120;
+                    clicked => {
+                        root.focus-adjust(5);
+                    }
+                }
+            }
+
+            // Bottom row: Segmented white glass bar ([15, 25, 45, 60]) with sliding pill
+            seg-bar := Rectangle {
+                height: 26px;
+                border-radius: 9px;
+                background: Theme.glass-card;
+                border-width: 1px;
+                border-color: Theme.glass-rim-subtle;
+
+                // Animated sliding white glass pill
+                Rectangle {
+                    x: 2px + max(root.active-preset-idx, 0) * ((seg-bar.width - 4px) / 4);
+                    y: 2px;
+                    width: (seg-bar.width - 4px) / 4;
+                    height: seg-bar.height - 4px;
+                    border-radius: 7px;
+                    background: #FFFFFF24;
+                    border-width: 1px;
+                    border-color: #FFFFFF4A;
+                    opacity: root.active-preset-idx >= 0 ? 1.0 : 0.0;
+
+                    animate x {
+                        duration: 200ms;
+                        easing: ease-out;
+                    }
+                    animate opacity {
+                        duration: 160ms;
+                        easing: ease-out;
+                    }
+                }
+
+                HorizontalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    padding: 2px;
+                    spacing: 0px;
+
+                    for preset in root.focus-presets: Rectangle {
+                        horizontal-stretch: 1;
+                        border-radius: 7px;
+                        background: (root.focus-minutes != preset && preset-touch.has-hover)
+                            ? (preset-touch.pressed ? Theme.glass-pill-hover : Theme.glass-pill)
+                            : transparent;
+
+                        animate background {
+                            duration: 160ms;
+                            easing: ease-out;
+                        }
+
+                        Text {
+                            width: parent.width;
+                            height: parent.height;
+                            text: "\{preset} min";
+                            color: root.focus-minutes == preset
+                                ? #FFFFFF
+                                : (preset-touch.has-hover ? Theme.ink : Theme.ink-2);
+                            font-size: 10.5px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+
+                            animate color {
+                                duration: 160ms;
+                                easing: ease-out;
+                            }
+                        }
+
+                        preset-touch := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.focus-preset(preset);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

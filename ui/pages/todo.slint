@@ -1,0 +1,507 @@
+import { Theme, TodoView } from "../theme.slint";
+import { IconCheck, IconClose, IconPlus } from "../icons.slint";
+
+export component TodoPage inherits Rectangle {
+    in property <[TodoView]> todo-items: [];
+    in property <int> todo-total: 0;
+    in property <int> todo-done: 0;
+    in property <string> todo-summary: "No tasks yet";
+    in-out property <string> todo-draft: "";
+    in-out property <bool> todo-edit-active: false;
+
+    callback todo-add(string);
+    callback todo-toggle(int);
+    callback todo-remove(int);
+    callback todo-clear-done();
+    callback todo-reorder(int, float);
+    callback todo-edit(bool);
+
+    preferred-width: 452px;
+    preferred-height: 104px;
+    background: transparent;
+
+    private property <float> completion: root.todo-total > 0 ? clamp(root.todo-done / root.todo-total, 0.0, 1.0) : 0.0;
+
+    VerticalLayout {
+        width: parent.width;
+        height: parent.height;
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 2px;
+        padding-bottom: 2px;
+        spacing: 3px;
+
+        // Top row (16px): 46px white progress bar + "{done} / {total} done" + Clear done pill (60x16)
+        HorizontalLayout {
+            height: 16px;
+            spacing: 8px;
+
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 46px;
+                height: 5px;
+                border-radius: 2.5px;
+                background: Theme.glass-pill;
+                border-width: 1px;
+                border-color: Theme.glass-rim-subtle;
+                clip: true;
+
+                Rectangle {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width * root.completion;
+                    height: parent.height;
+                    border-radius: 2.5px;
+                    background: (root.todo-total > 0 && root.todo-done == root.todo-total)
+                        ? Theme.success
+                        : #FFFFFFE6;
+
+                    animate width, background {
+                        duration: 240ms;
+                        easing: ease-out;
+                    }
+                }
+            }
+
+            Text {
+                text: "\{root.todo-done} / \{root.todo-total} done";
+                color: Theme.ink-2;
+                font-size: 10px;
+                font-weight: 600;
+                vertical-alignment: center;
+            }
+
+            Rectangle {
+                horizontal-stretch: 1;
+                background: transparent;
+            }
+
+            // Animated Clear done white glass pill (60x16)
+            Rectangle {
+                y: (parent.height - self.height) / 2;
+                width: 60px;
+                height: 16px;
+                border-radius: 8px;
+                background: (clear-touch.pressed && root.todo-done > 0)
+                    ? Theme.danger.with-alpha(0.32)
+                    : ((clear-touch.has-hover && root.todo-done > 0) ? Theme.danger-soft : Theme.glass-pill);
+                border-width: 1px;
+                border-color: (clear-touch.has-hover && root.todo-done > 0)
+                    ? Theme.danger.with-alpha(0.55)
+                    : Theme.glass-rim-subtle;
+                opacity: root.todo-done > 0 ? 1.0 : 0.36;
+
+                animate background, border-color, opacity {
+                    duration: 160ms;
+                    easing: ease-out;
+                }
+
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: "Clear done";
+                    color: (clear-touch.has-hover && root.todo-done > 0) ? Theme.danger : Theme.ink-2;
+                    font-size: 9.5px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+
+                    animate color {
+                        duration: 160ms;
+                        easing: ease-out;
+                    }
+                }
+
+                clear-touch := TouchArea {
+                    mouse-cursor: root.todo-done > 0 ? pointer : default;
+                    clicked => {
+                        if (root.todo-done > 0) {
+                            root.todo-clear-done();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Scrollable Flickable stage (52px tall -> fits 2 x 26px rows cleanly)
+        Rectangle {
+            height: 52px;
+            clip: true;
+            background: transparent;
+
+            if root.todo-total == 0: VerticalLayout {
+                width: parent.width;
+                height: parent.height;
+                alignment: center;
+                spacing: 1px;
+
+                IconCheck {
+                    width: 16px;
+                    height: 13px;
+                    x: (parent.width - self.width) / 2;
+                    tint: Theme.ink-dim;
+                }
+
+                Text {
+                    text: "All clear";
+                    color: Theme.ink;
+                    font-size: 11.5px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                }
+
+                Text {
+                    text: "Add a task below";
+                    color: Theme.ink-3;
+                    font-size: 9.5px;
+                    horizontal-alignment: center;
+                }
+            }
+
+            if root.todo-total > 0: Rectangle {
+                width: parent.width;
+                height: parent.height;
+                background: transparent;
+
+                todo-flick := Flickable {
+                    width: parent.width;
+                    height: parent.height;
+                    content-height: root.todo-total * 26px;
+                    mouse-drag-pan-enabled: false;
+
+                    Rectangle {
+                        x: 0px;
+                        y: 0px;
+                        width: parent.width - (root.todo-total > 2 ? 7px : 0px);
+                        height: root.todo-total * 26px;
+                        background: transparent;
+
+                        for item[i] in root.todo-items: slot := Rectangle {
+                            x: 0px;
+                            y: i * 26px;
+                            width: parent.width;
+                            height: 26px;
+                            background: transparent;
+
+                            private property <length> drag-shift: drag.pressed ? clamp(drag.mouse-y - drag.pressed-y, -34px, 34px) : 0px;
+                            private property <bool> row-hovered: row-toggle.has-hover || del-touch.has-hover || drag.has-hover;
+
+                            // Crisp white drop-slot hairline while dragging
+                            if drag.pressed: Rectangle {
+                                x: 6px;
+                                y: clamp(Math.round((drag.mouse-y - drag.pressed-y) / 26px), -i, max(root.todo-total - 1 - i, 0)) * 26px
+                                    + ((drag.mouse-y - drag.pressed-y) >= 0px ? 24px : 0px);
+                                width: parent.width - 12px;
+                                height: 2px;
+                                border-radius: 1px;
+                                background: #FFFFFFCC;
+                            }
+
+                            // Visual row with live drag-to-reorder vertical shift
+                            Rectangle {
+                                x: 0px;
+                                y: 1px + slot.drag-shift;
+                                width: parent.width;
+                                height: 24px;
+                                border-radius: 7px;
+                                background: drag.pressed
+                                    ? #FFFFFF24
+                                    : (slot.row-hovered ? Theme.glass-card-hover : transparent);
+                                border-width: 1px;
+                                border-color: drag.pressed
+                                    ? #FFFFFF4D
+                                    : (slot.row-hovered ? Theme.glass-rim-subtle : transparent);
+
+                                animate background, border-color {
+                                    duration: 160ms;
+                                    easing: ease-out;
+                                }
+
+                                // 6-dot drag grip visual
+                                Rectangle {
+                                    x: 2px;
+                                    y: (parent.height - 14px) / 2;
+                                    width: 14px;
+                                    height: 14px;
+                                    background: transparent;
+
+                                    for dot-row in 3: Rectangle {
+                                        y: 2px + dot-row * 4px;
+                                        x: 4px;
+                                        width: 2px;
+                                        height: 2px;
+                                        border-radius: 1px;
+                                        background: (drag.pressed || drag.has-hover) ? Theme.ink-2 : Theme.ink-dim;
+                                    }
+                                    for dot-row in 3: Rectangle {
+                                        y: 2px + dot-row * 4px;
+                                        x: 8px;
+                                        width: 2px;
+                                        height: 2px;
+                                        border-radius: 1px;
+                                        background: (drag.pressed || drag.has-hover) ? Theme.ink-2 : Theme.ink-dim;
+                                    }
+                                }
+
+                                // Frosted white circular checkbox (#FFFFFFE6 fill + #09090B check)
+                                Rectangle {
+                                    x: 20px;
+                                    y: (parent.height - self.height) / 2;
+                                    width: 14px;
+                                    height: 14px;
+                                    border-radius: 7px;
+                                    border-width: 1.5px;
+                                    border-color: item.completed
+                                        ? #FFFFFFE6
+                                        : (row-toggle.has-hover ? #FFFFFFCC : Theme.ink-3);
+                                    background: item.completed ? #FFFFFFE6 : transparent;
+
+                                    animate background, border-color {
+                                        duration: 160ms;
+                                        easing: ease-out;
+                                    }
+
+                                    IconCheck {
+                                        width: item.completed ? 8px : 4px;
+                                        height: item.completed ? 6.5px : 3px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        tint: #09090B;
+                                        opacity: item.completed ? 1.0 : 0.0;
+
+                                        animate opacity, width, height, x, y {
+                                            duration: 160ms;
+                                            easing: ease-out;
+                                        }
+                                    }
+                                }
+
+                                // Task title
+                                name := Text {
+                                    x: 41px;
+                                    width: parent.width - 67px;
+                                    height: parent.height;
+                                    text: item.text;
+                                    color: item.completed ? Theme.ink-3 : Theme.ink;
+                                    font-size: 11.5px;
+                                    font-weight: 400;
+                                    vertical-alignment: center;
+                                    overflow: TextOverflow.elide;
+
+                                    animate color {
+                                        duration: 160ms;
+                                        easing: ease-out;
+                                    }
+                                }
+
+                                // Animated strikethrough bar
+                                Rectangle {
+                                    x: 41px;
+                                    y: (parent.height - self.height) / 2;
+                                    width: item.completed ? min(name.preferred-width, name.width) : 0px;
+                                    height: 1.2px;
+                                    background: Theme.ink-3;
+
+                                    animate width {
+                                        duration: 180ms;
+                                        easing: ease-out;
+                                    }
+                                }
+
+                                // Smooth × delete button
+                                Rectangle {
+                                    x: parent.width - 21px;
+                                    y: (parent.height - self.height) / 2;
+                                    width: 16px;
+                                    height: 16px;
+                                    border-radius: 8px;
+                                    background: del-touch.pressed
+                                        ? Theme.danger.with-alpha(0.32)
+                                        : (del-touch.has-hover ? Theme.danger-soft : Theme.glass-pill);
+                                    border-width: 1px;
+                                    border-color: del-touch.has-hover ? Theme.danger.with-alpha(0.50) : transparent;
+                                    opacity: (row-toggle.has-hover || del-touch.has-hover) ? 1.0 : 0.0;
+
+                                    animate opacity, background, border-color {
+                                        duration: 160ms;
+                                        easing: ease-out;
+                                    }
+
+                                    IconClose {
+                                        width: 7px;
+                                        height: 7px;
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        tint: del-touch.has-hover ? Theme.danger : Theme.ink-2;
+                                    }
+                                }
+                            }
+
+                            // Stationary drag handle TouchArea (prevents coordinate feedback loop)
+                            drag := TouchArea {
+                                x: 0px;
+                                y: 0px;
+                                width: 18px;
+                                height: parent.height;
+                                mouse-cursor: ns-resize;
+                                pointer-event(event) => {
+                                    if (event.kind == PointerEventKind.up) {
+                                        root.todo-reorder(i, (self.mouse-y - self.pressed-y) / 1px);
+                                    }
+                                }
+                            }
+
+                            // Row click-to-toggle TouchArea
+                            row-toggle := TouchArea {
+                                x: 18px;
+                                y: 0px;
+                                width: parent.width - 42px;
+                                height: parent.height;
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.todo-toggle(item.id);
+                                }
+                            }
+
+                            // Delete TouchArea
+                            del-touch := TouchArea {
+                                x: parent.width - 22px;
+                                y: 3px;
+                                width: 20px;
+                                height: 20px;
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.todo-remove(item.id);
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Subtle frosted scrollbar thumb when list exceeds 2 rows
+                if root.todo-total > 2: Rectangle {
+                    x: parent.width - 3px;
+                    y: clamp((-todo-flick.content-y / max(todo-flick.content-height, 1px)) * parent.height, 2px, max(parent.height - self.height - 2px, 2px));
+                    width: 2.5px;
+                    height: max((parent.height / max(todo-flick.content-height, 1px)) * parent.height, 12px);
+                    border-radius: 1.25px;
+                    background: Theme.glass-rim;
+                }
+            }
+        }
+
+        // Input bar (26px height)
+        Rectangle {
+            height: 26px;
+            border-radius: 8px;
+            background: Theme.glass-card;
+            border-width: 1px;
+            border-color: todo-input.has-focus ? #FFFFFF4D : Theme.glass-rim-subtle;
+
+            animate border-color {
+                duration: 160ms;
+                easing: ease-out;
+            }
+
+            // Clicking left icon zone focuses input
+            TouchArea {
+                x: 0px;
+                y: 0px;
+                width: 24px;
+                height: parent.height;
+                mouse-cursor: text;
+                clicked => {
+                    todo-input.focus();
+                }
+            }
+
+            IconPlus {
+                x: 9px;
+                y: (parent.height - self.height) / 2;
+                width: 10px;
+                height: 10px;
+                tint: todo-input.has-focus ? #FFFFFF : Theme.ink-3;
+            }
+
+            if root.todo-draft == "" && !todo-input.has-focus: Text {
+                x: 24px;
+                width: parent.width - 74px;
+                height: parent.height;
+                text: "Add a task…";
+                color: Theme.ink-3;
+                font-size: 11px;
+                vertical-alignment: center;
+            }
+
+            todo-input := TextInput {
+                x: 24px;
+                width: parent.width - 74px;
+                height: parent.height;
+                text <=> root.todo-draft;
+                font-size: 11px;
+                color: Theme.ink;
+                vertical-alignment: center;
+
+                changed has-focus => {
+                    root.todo-edit(todo-input.has-focus);
+                }
+
+                accepted => {
+                    if (todo-input.text != "") {
+                        root.todo-add(todo-input.text);
+                        root.todo-draft = "";
+                    }
+                }
+            }
+
+            // Frosted white Add pill (40x18)
+            Rectangle {
+                x: parent.width - 44px;
+                y: (parent.height - self.height) / 2;
+                width: 40px;
+                height: 18px;
+                border-radius: 6px;
+                background: root.todo-draft != ""
+                    ? (add-touch.pressed ? #FFFFFF22 : (add-touch.has-hover ? #FFFFFF40 : #FFFFFF2E))
+                    : (add-touch.has-hover ? Theme.glass-pill-hover : Theme.glass-pill);
+                border-width: 1px;
+                border-color: root.todo-draft != ""
+                    ? (add-touch.has-hover ? #FFFFFF68 : #FFFFFF4D)
+                    : Theme.glass-rim-subtle;
+
+                animate background, border-color {
+                    duration: 160ms;
+                    easing: ease-out;
+                }
+
+                Text {
+                    width: parent.width;
+                    height: parent.height;
+                    text: "Add";
+                    color: root.todo-draft != "" ? #FFFFFF : Theme.ink-3;
+                    font-size: 9.5px;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+
+                    animate color {
+                        duration: 160ms;
+                        easing: ease-out;
+                    }
+                }
+
+                add-touch := TouchArea {
+                    mouse-cursor: root.todo-draft != "" ? pointer : text;
+                    clicked => {
+                        if (root.todo-draft != "") {
+                            root.todo-add(root.todo-draft);
+                            root.todo-draft = "";
+                        } else {
+                            todo-input.focus();
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

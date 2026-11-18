@@ -8,8 +8,8 @@ use std::time::{Duration, Instant};
 use crate::state::NotchMode;
 
 pub const HUD_DURATION: Duration = Duration::from_secs(3);
-pub const HEADPHONE_SIZE: (f32, f32) = (320.0, 64.0);
-pub const CHARGING_SIZE: (f32, f32) = (300.0, 58.0);
+pub const HEADPHONE_SIZE: (f32, f32) = (268.0, 54.0);
+pub const CHARGING_SIZE: (f32, f32) = (256.0, 50.0);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HudKind {
@@ -177,8 +177,8 @@ mod tests {
 
     #[test]
     fn hud_sizes_match_the_prd() {
-        assert_eq!(HEADPHONE_SIZE, (320.0, 64.0));
-        assert_eq!(CHARGING_SIZE, (300.0, 58.0));
+        assert_eq!(HEADPHONE_SIZE, (268.0, 54.0));
+        assert_eq!(CHARGING_SIZE, (256.0, 50.0));
         assert_eq!(HUD_DURATION, Duration::from_secs(3));
     }
 

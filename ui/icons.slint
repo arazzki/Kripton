@@ -1,0 +1,555 @@
+// Kripton — Uniform vector Path icons for the glassmorphism UI.
+
+import { Theme } from "./theme.slint";
+
+export component IconMusic inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.5px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 6; y: 14; }
+        LineTo { x: 6; y: 4; }
+        LineTo { x: 13; y: 2.5; }
+        LineTo { x: 13; y: 12; }
+        MoveTo { x: 4; y: 14; }
+        ArcTo { radius-x: 2; radius-y: 2; sweep: true; x: 8; y: 14; }
+        ArcTo { radius-x: 2; radius-y: 2; sweep: true; x: 4; y: 14; }
+        MoveTo { x: 11; y: 12; }
+        ArcTo { radius-x: 2; radius-y: 2; sweep: true; x: 15; y: 12; }
+        ArcTo { radius-x: 2; radius-y: 2; sweep: true; x: 11; y: 12; }
+    }
+}
+
+export component IconFocus inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.5px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 9; y: 2; }
+        ArcTo { radius-x: 7; radius-y: 7; sweep: true; x: 9; y: 16; }
+        ArcTo { radius-x: 7; radius-y: 7; sweep: true; x: 9; y: 2; }
+        MoveTo { x: 9; y: 5.5; }
+        LineTo { x: 9; y: 9; }
+        LineTo { x: 12; y: 10.5; }
+    }
+}
+
+export component IconWater inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 12;
+        viewbox-height: 12;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.4px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 6; y: 1.5; }
+        LineTo { x: 9.5; y: 6.8; }
+        ArcTo { radius-x: 3.5; radius-y: 3.5; sweep: true; x: 2.5; y: 6.8; }
+        Close {}
+    }
+}
+
+export component IconShelf inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 12;
+        viewbox-height: 12;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.4px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 1.5; y: 3; }
+        LineTo { x: 4.8; y: 3; }
+        LineTo { x: 6; y: 4.4; }
+        LineTo { x: 10.5; y: 4.4; }
+        LineTo { x: 10.5; y: 9.8; }
+        LineTo { x: 1.5; y: 9.8; }
+        Close {}
+    }
+}
+
+export component IconTodo inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 12;
+        viewbox-height: 12;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.4px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 2; y: 6.2; }
+        LineTo { x: 4.8; y: 9; }
+        LineTo { x: 10; y: 3; }
+    }
+}
+
+export component IconPrev inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.6px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 11; y: 3.5; }
+        LineTo { x: 5.5; y: 9; }
+        LineTo { x: 11; y: 14.5; }
+    }
+}
+
+export component IconPlay inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: root.tint;
+        stroke: transparent;
+        animate fill { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 6; y: 3.5; }
+        LineTo { x: 14.5; y: 9; }
+        LineTo { x: 6; y: 14.5; }
+        Close {}
+    }
+}
+
+export component IconPause inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: root.tint;
+        stroke: transparent;
+        animate fill { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 5.5; y: 4; }
+        LineTo { x: 8.2; y: 4; }
+        LineTo { x: 8.2; y: 14; }
+        LineTo { x: 5.5; y: 14; }
+        Close {}
+        MoveTo { x: 9.8; y: 4; }
+        LineTo { x: 12.5; y: 4; }
+        LineTo { x: 12.5; y: 14; }
+        LineTo { x: 9.8; y: 14; }
+        Close {}
+    }
+}
+
+export component IconNext inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.6px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 7; y: 3.5; }
+        LineTo { x: 12.5; y: 9; }
+        LineTo { x: 7; y: 14.5; }
+    }
+}
+
+export component IconLyrics inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.4px;
+        stroke-line-cap: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 4; y: 5; }
+        LineTo { x: 14; y: 5; }
+        MoveTo { x: 4; y: 9; }
+        LineTo { x: 11; y: 9; }
+        MoveTo { x: 4; y: 13; }
+        LineTo { x: 14; y: 13; }
+    }
+}
+
+export component IconLink inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.4px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 7.5; y: 3.5; }
+        LineTo { x: 14.5; y: 3.5; }
+        LineTo { x: 14.5; y: 10.5; }
+        MoveTo { x: 14.5; y: 3.5; }
+        LineTo { x: 8; y: 10; }
+        MoveTo { x: 11; y: 10.5; }
+        LineTo { x: 11; y: 14.5; }
+        LineTo { x: 3.5; y: 14.5; }
+        LineTo { x: 3.5; y: 7; }
+        LineTo { x: 7.5; y: 7; }
+    }
+}
+
+export component IconChevron inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 12;
+        viewbox-height: 8;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.5px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 2.5; y: 2.5; }
+        LineTo { x: 6; y: 6; }
+        LineTo { x: 9.5; y: 2.5; }
+    }
+}
+
+export component IconFolderLarge inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 34;
+        viewbox-height: 28;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.6px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 2; y: 6; }
+        LineTo { x: 11; y: 6; }
+        LineTo { x: 14; y: 9; }
+        LineTo { x: 32; y: 9; }
+        LineTo { x: 32; y: 25; }
+        LineTo { x: 2; y: 25; }
+        Close {}
+    }
+}
+
+export component IconFileLarge inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 30;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.5px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 2; y: 1.5; }
+        LineTo { x: 15; y: 1.5; }
+        LineTo { x: 22; y: 8.5; }
+        LineTo { x: 22; y: 28.5; }
+        LineTo { x: 2; y: 28.5; }
+        Close {}
+        MoveTo { x: 15; y: 1.5; }
+        LineTo { x: 15; y: 8.5; }
+        LineTo { x: 22; y: 8.5; }
+    }
+}
+
+export component IconClose inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 10;
+        viewbox-height: 10;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.4px;
+        stroke-line-cap: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 2.5; y: 2.5; }
+        LineTo { x: 7.5; y: 7.5; }
+        MoveTo { x: 7.5; y: 2.5; }
+        LineTo { x: 2.5; y: 7.5; }
+    }
+}
+
+export component IconCheck inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 12;
+        viewbox-height: 10;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.6px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 1.5; y: 5; }
+        LineTo { x: 4.5; y: 8; }
+        LineTo { x: 10.5; y: 2; }
+    }
+}
+
+export component IconPlus inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.6px;
+        stroke-line-cap: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 9; y: 4; }
+        LineTo { x: 9; y: 14; }
+        MoveTo { x: 4; y: 9; }
+        LineTo { x: 14; y: 9; }
+    }
+}
+
+export component IconMinus inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 1.6px;
+        stroke-line-cap: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 4; y: 9; }
+        LineTo { x: 14; y: 9; }
+    }
+}
+
+export component IconHeadphones inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: transparent;
+        stroke: root.tint;
+        stroke-width: 2.0px;
+        stroke-line-cap: round;
+        stroke-line-join: round;
+        animate stroke { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 4.2; y: 14.0; }
+        LineTo { x: 4.2; y: 11.8; }
+        ArcTo { radius-x: 7.8; radius-y: 7.8; sweep: true; x: 19.8; y: 11.8; }
+        LineTo { x: 19.8; y: 14.0; }
+    }
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: root.tint;
+        stroke: transparent;
+        animate fill { duration: 160ms; easing: ease-out; }
+
+        // Left earcup
+        MoveTo { x: 4.0; y: 12.6; }
+        LineTo { x: 4.4; y: 12.6; }
+        ArcTo { radius-x: 1.8; radius-y: 1.8; sweep: true; x: 6.2; y: 14.4; }
+        LineTo { x: 6.2; y: 18.2; }
+        ArcTo { radius-x: 1.8; radius-y: 1.8; sweep: true; x: 4.4; y: 20.0; }
+        LineTo { x: 4.0; y: 20.0; }
+        ArcTo { radius-x: 1.8; radius-y: 1.8; sweep: true; x: 2.2; y: 18.2; }
+        LineTo { x: 2.2; y: 14.4; }
+        ArcTo { radius-x: 1.8; radius-y: 1.8; sweep: true; x: 4.0; y: 12.6; }
+        Close {}
+
+        // Right earcup
+        MoveTo { x: 19.6; y: 12.6; }
+        LineTo { x: 20.0; y: 12.6; }
+        ArcTo { radius-x: 1.8; radius-y: 1.8; sweep: true; x: 21.8; y: 14.4; }
+        LineTo { x: 21.8; y: 18.2; }
+        ArcTo { radius-x: 1.8; radius-y: 1.8; sweep: true; x: 20.0; y: 20.0; }
+        LineTo { x: 19.6; y: 20.0; }
+        ArcTo { radius-x: 1.8; radius-y: 1.8; sweep: true; x: 17.8; y: 18.2; }
+        LineTo { x: 17.8; y: 14.4; }
+        ArcTo { radius-x: 1.8; radius-y: 1.8; sweep: true; x: 19.6; y: 12.6; }
+        Close {}
+    }
+}
+
+export component IconBolt inherits Rectangle {
+    in property <color> tint: Theme.ink;
+    background: transparent;
+
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 24;
+        viewbox-height: 24;
+        fill: root.tint;
+        stroke: transparent;
+        animate fill { duration: 160ms; easing: ease-out; }
+
+        MoveTo { x: 13.0; y: 1.5; }
+        LineTo { x: 4.5; y: 13.8; }
+        LineTo { x: 10.5; y: 13.8; }
+        LineTo { x: 8.5; y: 22.5; }
+        LineTo { x: 19.5; y: 9.2; }
+        LineTo { x: 13.0; y: 9.2; }
+        Close {}
+    }
+}

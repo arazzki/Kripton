@@ -64,7 +64,7 @@ fn main() -> Result<(), slint::PlatformError> {
     let shelf = shelf::ShelfManager::start(store.clone());
     let headphone = headphone::HeadphoneWatcher::start();
 
-    window_ext::apply_mode(&app, window_ext::collapsed_mode());
+    window_ext::apply_mode(&app, window_ext::collapsed_mode(false, false));
     app.show()?;
     window_ext::install_overlay(&app, media, audio, shelf, store.clone(), tray, headphone);
 
@@ -101,7 +101,7 @@ fn wire_callbacks(app: &AppWindow, store: &StateStore, tray: tray::TrayControlle
                     NotchMode::Expanded
                 }
             } else {
-                window_ext::collapsed_mode()
+                window_ext::collapsed_mode(window_ext::media_active(), app.get_focus_active())
             };
             window_ext::apply_mode(&app, mode);
         }
@@ -114,17 +114,14 @@ fn wire_callbacks(app: &AppWindow, store: &StateStore, tray: tray::TrayControlle
         store_for_page.update(|state| state.active_page = page.index());
 
         if let Some(app) = weak_for_page.upgrade() {
-            let changed = app.get_active_page() != page.index() as i32;
-            if changed {
-                app.set_page_fade(0.0);
-                let weak_fade = app.as_weak();
-                Timer::single_shot(Duration::from_millis(20), move || {
-                    if let Some(app) = weak_fade.upgrade() {
-                        app.set_page_fade(1.0);
-                    }
-                });
+            let current = app.get_active_page();
+            let target = page.index() as i32;
+            if current != target {
+                let direction = if target >= current { 1 } else { -1 };
+                app.set_page_direction(direction);
+                window_ext::trigger_page_transition(&app);
             }
-            app.set_active_page(page.index() as i32);
+            app.set_active_page(target);
             app.set_page_title(page.title().into());
             app.set_page_subtitle(page.subtitle().into());
 

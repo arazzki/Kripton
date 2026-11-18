@@ -29,7 +29,7 @@ pub struct LyricLine {
     pub text: String,
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SyncedLyrics {
     pub track_id: String,
     pub title: String,
@@ -37,6 +37,13 @@ pub struct SyncedLyrics {
     pub lines: Vec<LyricLine>,
     pub is_synced: bool,
     pub plain_lyrics: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LyricsStatus {
+    Loading,
+    Found(SyncedLyrics),
+    NotFound,
 }
 
 impl SyncedLyrics {
@@ -207,26 +214,45 @@ impl LyricsManager {
 
     /// Retrieve lyrics for a track. If cached, returns immediately.
     /// If not cached, triggers an asynchronous background query.
+    #[allow(dead_code)]
     pub fn get_or_fetch(
         &self,
         artist: &str,
         title: &str,
         duration_ms: u64,
     ) -> Option<SyncedLyrics> {
+        match self.query_or_fetch(artist, title, duration_ms) {
+            LyricsStatus::Found(lyrics) => Some(lyrics),
+            _ => None,
+        }
+    }
+
+    /// Query lyrics status without blocking the UI thread on repeated disk access.
+    pub fn query_or_fetch(&self, artist: &str, title: &str, duration_ms: u64) -> LyricsStatus {
         if title.trim().is_empty() {
-            return None;
+            return LyricsStatus::NotFound;
         }
 
         let key = Self::track_key(artist, title);
 
-        // 1. Check in-memory cache.
+        // 1. Check in-memory cache (instant, non-blocking).
         if let Ok(cache) = self.inner.memory_cache.lock() {
             if let Some(entry) = cache.get(&key) {
-                return entry.clone();
+                return match entry {
+                    Some(lyrics) => LyricsStatus::Found(lyrics.clone()),
+                    None => LyricsStatus::NotFound,
+                };
             }
         }
 
-        // 2. Check disk cache.
+        // 2. If background fetch is already in flight, do not hit disk again.
+        if let Ok(in_flight) = self.inner.in_flight.lock() {
+            if in_flight.contains_key(&key) {
+                return LyricsStatus::Loading;
+            }
+        }
+
+        // 3. Check disk cache once.
         let file_path = self.disk_path(&key);
         if file_path.exists() {
             if let Ok(file) = File::open(&file_path) {
@@ -235,12 +261,12 @@ impl LyricsManager {
                     if let Ok(mut cache) = self.inner.memory_cache.lock() {
                         cache.insert(key.clone(), Some(lyrics.clone()));
                     }
-                    return Some(lyrics);
+                    return LyricsStatus::Found(lyrics);
                 }
             }
         }
 
-        // 3. Mark in-flight and fetch in background thread.
+        // 4. Mark in-flight and fetch in background thread.
         let should_fetch = {
             let mut in_flight = self.inner.in_flight.lock().unwrap();
             if in_flight.contains_key(&key) {
@@ -338,7 +364,7 @@ impl LyricsManager {
                 .expect("failed to spawn lyrics fetcher thread");
         }
 
-        None
+        LyricsStatus::Loading
     }
 
     fn disk_path(&self, key: &str) -> PathBuf {
@@ -348,12 +374,43 @@ impl LyricsManager {
     }
 }
 
+pub fn clean_track_title(title: &str) -> String {
+    let mut cleaned = title.to_string();
+    let lower = cleaned.to_lowercase();
+    for tag in ["(feat.", "[feat.", "(ft.", "[ft."] {
+        if let Some(idx) = lower.find(tag) {
+            let close = if tag.starts_with('(') { ')' } else { ']' };
+            if let Some(end) = cleaned[idx..].find(close) {
+                cleaned.replace_range(idx..idx + end + 1, "");
+            } else {
+                cleaned.truncate(idx);
+            }
+            break;
+        }
+    }
+    if let Some(idx) = cleaned.find(" - ") {
+        let suffix = cleaned[idx + 3..].to_lowercase();
+        if suffix.contains("remaster")
+            || suffix.contains("live")
+            || suffix.contains("deluxe")
+            || suffix.contains("bonus")
+            || suffix.contains("version")
+            || suffix.contains("edit")
+        {
+            cleaned.truncate(idx);
+        }
+    }
+    cleaned.trim().to_string()
+}
+
 fn fetch_lrclib(
     client: &HttpClient,
     artist: &str,
     title: &str,
     duration_secs: u64,
 ) -> Option<LrclibResponse> {
+    let cleaned_title = clean_track_title(title);
+
     // 1. Try /api/get with exact parameters
     let get_url = format!(
         "{}?track_name={}&artist_name={}&duration={}",
@@ -365,22 +422,55 @@ fn fetch_lrclib(
 
     if let Ok(body) = http_get(client, &get_url) {
         if let Ok(resp) = serde_json::from_str::<LrclibResponse>(&body) {
-            if resp.synced_lyrics.is_some() || resp.plain_lyrics.is_some() {
+            if resp.synced_lyrics.is_some() {
                 return Some(resp);
             }
         }
     }
 
-    // 2. Fallback to /api/search?q=artist+title
-    let query = format!("{} {}", artist, title);
+    // 2. If cleaned title is different, try /api/get with cleaned title
+    if !cleaned_title.is_empty() && cleaned_title != title {
+        let clean_get_url = format!(
+            "{}?track_name={}&artist_name={}&duration={}",
+            LRCLIB_API_GET,
+            url_encode(&cleaned_title),
+            url_encode(artist),
+            duration_secs
+        );
+        if let Ok(body) = http_get(client, &clean_get_url) {
+            if let Ok(resp) = serde_json::from_str::<LrclibResponse>(&body) {
+                if resp.synced_lyrics.is_some() {
+                    return Some(resp);
+                }
+            }
+        }
+    }
+
+    // 3. Fallback to /api/search?q=artist+title (strictly prioritizing synced lyrics)
+    let search_title = if !cleaned_title.is_empty() {
+        &cleaned_title
+    } else {
+        title
+    };
+    let query = format!("{} {}", artist, search_title);
     let search_url = format!("{}?q={}", LRCLIB_API_SEARCH, url_encode(&query));
 
     if let Ok(body) = http_get(client, &search_url) {
         if let Ok(results) = serde_json::from_str::<Vec<LrclibSearchResult>>(&body) {
-            for item in results {
-                if item.synced_lyrics.is_some() || item.plain_lyrics.is_some() {
+            // First pass: strictly look for synced_lyrics
+            for item in &results {
+                if item.synced_lyrics.is_some() {
                     return Some(LrclibResponse {
-                        synced_lyrics: item.synced_lyrics,
+                        synced_lyrics: item.synced_lyrics.clone(),
+                        plain_lyrics: item.plain_lyrics.clone(),
+                    });
+                }
+            }
+            // Second pass: fallback to plain_lyrics if no synced version exists anywhere
+            for item in results {
+                if item.plain_lyrics.is_some() {
+                    return Some(LrclibResponse {
+                        synced_lyrics: None,
                         plain_lyrics: item.plain_lyrics,
                     });
                 }
@@ -508,6 +598,19 @@ mod tests {
         assert_eq!(next, None);
     }
 
+    #[test]
+    fn test_clean_track_title() {
+        assert_eq!(
+            clean_track_title("In the End - 2020 Remaster"),
+            "In the End"
+        );
+        assert_eq!(clean_track_title("Starboy (feat. Daft Punk)"), "Starboy");
+        assert_eq!(
+            clean_track_title("Hotel California - Live"),
+            "Hotel California"
+        );
+        assert_eq!(clean_track_title("Ordinary Song"), "Ordinary Song");
+    }
     #[test]
     fn test_url_encode() {
         assert_eq!(url_encode("Hello World"), "Hello+World");

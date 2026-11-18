@@ -1,0 +1,586 @@
+// Kripton — Shared monochrome white frosted glassmorphism UI primitives.
+
+import { Theme } from "./theme.slint";
+import {
+    IconMusic,
+    IconFocus,
+    IconWater,
+    IconShelf,
+    IconTodo,
+    IconPrev,
+    IconPlay,
+    IconPause,
+    IconNext,
+    IconLyrics,
+    IconLink,
+    IconChevron,
+    IconClose,
+    IconCheck,
+    IconPlus,
+    IconMinus,
+    IconHeadphones,
+    IconBolt,
+} from "./icons.slint";
+
+export component GlassPillButton inherits Rectangle {
+    in property <string> text: "";
+    in property <string> icon-kind: "";
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    in property <color> accent-color: Theme.accent;
+    in property <length> horizontal-padding: 11px;
+    in property <length> font-size: 11.5px;
+    in property <int> font-weight: 600;
+    in property <length> radius: self.height / 2;
+
+    out property <bool> has-hover: touch.has-hover;
+    out property <bool> pressed: touch.pressed;
+
+    callback clicked();
+
+    private property <color> fg-tint: !root.enabled
+        ? Theme.ink-dim
+        : (root.active
+            ? (root.accent-color == Theme.accent ? Theme.ink : root.accent-color)
+            : (touch.has-hover ? Theme.ink : Theme.ink-2));
+
+    preferred-width: content-layout.preferred-width;
+    preferred-height: content-layout.preferred-height;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: root.radius;
+    border-width: 1px;
+    opacity: root.enabled ? 1.0 : 0.44;
+    background: !root.enabled
+        ? Theme.glass-card
+        : (root.active
+            ? (touch.pressed
+                ? (root.accent-color == Theme.accent ? #FFFFFF34 : root.accent-color.with-alpha(0.24))
+                : (touch.has-hover
+                    ? (root.accent-color == Theme.accent ? #FFFFFF2C : root.accent-color.with-alpha(0.20))
+                    : (root.accent-color == Theme.accent ? Theme.accent-soft : root.accent-color.with-alpha(0.14))))
+            : (touch.pressed
+                ? Theme.glass-pill-press
+                : (touch.has-hover ? Theme.glass-pill-hover : Theme.glass-pill)));
+    border-color: !root.enabled
+        ? Theme.glass-rim-subtle
+        : (root.active
+            ? (root.accent-color == Theme.accent
+                ? (touch.pressed ? #FFFFFF6B : (touch.has-hover ? #FFFFFF5C : Theme.accent-rim))
+                : root.accent-color.with-alpha(touch.pressed ? 0.56 : (touch.has-hover ? 0.50 : 0.40)))
+            : (touch.pressed || touch.has-hover ? Theme.glass-specular : Theme.glass-rim));
+
+    animate background, border-color, opacity {
+        duration: 160ms;
+        easing: ease-out;
+    }
+
+    // Top specular glass highlight that responds subtly on press.
+    Rectangle {
+        x: min(parent.width * 0.2, root.radius * 0.65);
+        y: (touch.pressed && root.enabled) ? 1.5px : 1px;
+        width: max(0px, parent.width - self.x * 2);
+        height: 1px;
+        background: root.active
+            ? (root.accent-color == Theme.accent
+                ? #FFFFFF.with-alpha(touch.pressed ? 0.16 : 0.34)
+                : root.accent-color.with-alpha(touch.pressed ? 0.14 : 0.28))
+            : #FFFFFF.with-alpha(touch.pressed ? 0.08 : 0.18);
+        opacity: root.enabled ? 1.0 : 0.35;
+        animate y, opacity {
+            duration: 120ms;
+            easing: ease-out;
+        }
+    }
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        y: (touch.pressed && root.enabled) ? 0.5px : 0px;
+        background: transparent;
+        animate y {
+            duration: 100ms;
+            easing: ease-out;
+        }
+
+        content-layout := HorizontalLayout {
+            padding-left: root.horizontal-padding;
+            padding-right: root.horizontal-padding;
+            padding-top: 5px;
+            padding-bottom: 5px;
+            spacing: 6px;
+            alignment: center;
+
+            @children
+
+            if root.icon-kind == "music": IconMusic {
+                width: 13px;
+                height: 13px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "focus": IconFocus {
+                width: 13px;
+                height: 13px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "water": IconWater {
+                width: 12px;
+                height: 12px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "shelf": IconShelf {
+                width: 12px;
+                height: 12px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "todo": IconTodo {
+                width: 12px;
+                height: 12px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "prev": IconPrev {
+                width: 13px;
+                height: 13px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "play": IconPlay {
+                width: 13px;
+                height: 13px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "pause": IconPause {
+                width: 13px;
+                height: 13px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "next": IconNext {
+                width: 13px;
+                height: 13px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "lyrics": IconLyrics {
+                width: 13px;
+                height: 13px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "link": IconLink {
+                width: 12px;
+                height: 12px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "chevron": IconChevron {
+                width: 10px;
+                height: 6px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "close": IconClose {
+                width: 10px;
+                height: 10px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "check": IconCheck {
+                width: 11px;
+                height: 9px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "plus": IconPlus {
+                width: 12px;
+                height: 12px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "minus": IconMinus {
+                width: 12px;
+                height: 12px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "headphones": IconHeadphones {
+                width: 13px;
+                height: 13px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+            if root.icon-kind == "bolt": IconBolt {
+                width: 12px;
+                height: 12px;
+                y: (parent.height - self.height) / 2;
+                tint: root.fg-tint;
+            }
+
+            if root.text != "": Text {
+                text: root.text;
+                color: !root.enabled
+                    ? Theme.ink-dim
+                    : (root.active || touch.has-hover ? Theme.ink : Theme.ink-2);
+                font-size: root.font-size;
+                font-weight: root.font-weight;
+                vertical-alignment: center;
+                animate color {
+                    duration: 160ms;
+                    easing: ease-out;
+                }
+            }
+        }
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if (root.enabled) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+export component GlassIconButton inherits Rectangle {
+    in property <length> size: 32px;
+    in property <length> radius: self.size / 2;
+    in property <bool> active: false;
+    in property <bool> enabled: true;
+    in property <bool> danger-hover: false;
+    in property <color> accent-color: Theme.accent;
+
+    out property <bool> has-hover: touch.has-hover;
+    out property <bool> pressed: touch.pressed;
+
+    callback clicked();
+
+    width: root.size;
+    height: root.size;
+    horizontal-stretch: 0;
+    vertical-stretch: 0;
+    border-radius: root.radius;
+    border-width: 1px;
+    opacity: root.enabled ? 1.0 : 0.38;
+    background: !root.enabled
+        ? Theme.glass-card
+        : (root.danger-hover && touch.pressed
+            ? Theme.danger.with-alpha(0.30)
+            : (root.danger-hover && touch.has-hover
+                ? Theme.danger-soft
+                : (root.active
+                    ? (touch.pressed
+                        ? (root.accent-color == Theme.accent ? #FFFFFF34 : root.accent-color.with-alpha(0.24))
+                        : (touch.has-hover
+                            ? (root.accent-color == Theme.accent ? #FFFFFF2C : root.accent-color.with-alpha(0.20))
+                            : (root.accent-color == Theme.accent ? Theme.accent-soft : root.accent-color.with-alpha(0.14))))
+                    : (touch.pressed
+                        ? Theme.glass-pill-press
+                        : (touch.has-hover ? Theme.glass-pill-hover : Theme.glass-pill)))));
+    border-color: !root.enabled
+        ? Theme.glass-rim-subtle
+        : (root.danger-hover && (touch.has-hover || touch.pressed)
+            ? Theme.danger.with-alpha(0.48)
+            : (root.active
+                ? (root.accent-color == Theme.accent
+                    ? (touch.pressed ? #FFFFFF6B : (touch.has-hover ? #FFFFFF5C : Theme.accent-rim))
+                    : root.accent-color.with-alpha(touch.pressed ? 0.58 : 0.45))
+                : (touch.pressed || touch.has-hover ? Theme.glass-specular : Theme.glass-rim)));
+
+    animate background, border-color, opacity {
+        duration: 160ms;
+        easing: ease-out;
+    }
+
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        y: (touch.pressed && root.enabled) ? 0.5px : 0px;
+        background: transparent;
+        animate y {
+            duration: 100ms;
+            easing: ease-out;
+        }
+
+        @children
+    }
+
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if (root.enabled) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+export component BatteryRing inherits Rectangle {
+    in property <float> percent: 100.0;
+    in property <bool> charging: false;
+    in property <bool> present: true;
+    in property <bool> on-ac: true;
+    in property <float> arc-x: 9.0;
+    in property <float> arc-y: 1.25;
+    in property <bool> arc-large: false;
+    in property <bool> arc-visible: false;
+    in property <bool> full: true;
+    in property <length> ring-size: 16px;
+    in property <bool> show-bolt: true;
+
+    private property <color> ring-tint: root.charging
+        ? Theme.success
+        : (root.percent <= 20.0
+            ? Theme.warn
+            : (root.present
+                ? Theme.ink-2
+                : (root.on-ac ? Theme.accent : Theme.ink-2)));
+    private property <length> ring-stroke: max(1.8px, root.ring-size * 0.11);
+
+    width: root.ring-size;
+    height: root.ring-size;
+    background: transparent;
+
+    // Background track
+    Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: Theme.glass-rim;
+        stroke-width: root.ring-stroke;
+        stroke-line-cap: round;
+        MoveTo { x: 9; y: 1.25; }
+        ArcTo { radius-x: 7.75; radius-y: 7.75; large-arc: false; sweep: true; x: 9; y: 16.75; }
+        ArcTo { radius-x: 7.75; radius-y: 7.75; large-arc: false; sweep: true; x: 9; y: 1.25; }
+    }
+
+    if root.full: Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: root.ring-tint;
+        stroke-width: root.ring-stroke;
+        stroke-line-cap: round;
+        animate stroke { duration: 200ms; easing: ease-out; }
+        MoveTo { x: 9; y: 1.25; }
+        ArcTo { radius-x: 7.75; radius-y: 7.75; large-arc: false; sweep: true; x: 9; y: 16.75; }
+        ArcTo { radius-x: 7.75; radius-y: 7.75; large-arc: false; sweep: true; x: 9; y: 1.25; }
+    }
+
+    if root.arc-visible && !root.full: Path {
+        width: parent.width;
+        height: parent.height;
+        viewbox-x: 0;
+        viewbox-y: 0;
+        viewbox-width: 18;
+        viewbox-height: 18;
+        fill: transparent;
+        stroke: root.ring-tint;
+        stroke-width: root.ring-stroke;
+        stroke-line-cap: round;
+        animate stroke { duration: 200ms; easing: ease-out; }
+        MoveTo { x: 9; y: 1.25; }
+        ArcTo {
+            radius-x: 7.75;
+            radius-y: 7.75;
+            large-arc: root.arc-large;
+            sweep: true;
+            x: root.arc-x;
+            y: root.arc-y;
+        }
+    }
+
+    if root.show-bolt && (root.charging || (!root.present && root.on-ac)): IconBolt {
+        width: root.ring-size * 0.50;
+        height: root.ring-size * 0.50;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        tint: root.present ? Theme.success : Theme.accent-bright;
+    }
+}
+
+export component AudioWave inherits Rectangle {
+    in property <float> wave-0: 0.0;
+    in property <float> wave-1: 0.0;
+    in property <float> wave-2: 0.0;
+    in property <float> wave-3: 0.0;
+    in property <float> wave-4: 0.0;
+    in property <color> bar-color: root.active ? Theme.accent : Theme.ink-dim;
+    in property <length> bar-width: 2.5px;
+    in property <length> bar-gap: 2.5px;
+    in property <bool> active: true;
+    in property <float> inactive-opacity: 0.72;
+
+    max-height: 16px;
+    min-height: 3px;
+    preferred-height: self.max-height;
+
+    private property <float> active-scale: root.active ? 1.0 : 0.0;
+    private property <length> travel: max(0px, root.max-height - root.min-height);
+
+    animate active-scale {
+        duration: 220ms;
+        easing: ease-out;
+    }
+
+    width: root.bar-width * 5 + root.bar-gap * 4;
+    background: transparent;
+    opacity: root.active ? 1.0 : root.inactive-opacity;
+
+    animate opacity {
+        duration: 220ms;
+        easing: ease-out;
+    }
+
+    Rectangle {
+        width: parent.width;
+        height: root.max-height;
+        y: (parent.height - self.height) / 2;
+        background: transparent;
+
+        Rectangle {
+            x: 0px;
+            width: root.bar-width;
+            height: root.min-height + clamp(root.wave-0, 0.0, 1.0) * root.active-scale * root.travel;
+            y: (parent.height - self.height) / 2;
+            border-radius: root.bar-width / 2;
+            background: root.bar-color;
+            animate background { duration: 180ms; easing: ease-out; }
+        }
+
+        Rectangle {
+            x: (root.bar-width + root.bar-gap) * 1;
+            width: root.bar-width;
+            height: root.min-height + clamp(root.wave-1, 0.0, 1.0) * root.active-scale * root.travel;
+            y: (parent.height - self.height) / 2;
+            border-radius: root.bar-width / 2;
+            background: root.bar-color;
+            animate background { duration: 180ms; easing: ease-out; }
+        }
+
+        Rectangle {
+            x: (root.bar-width + root.bar-gap) * 2;
+            width: root.bar-width;
+            height: root.min-height + clamp(root.wave-2, 0.0, 1.0) * root.active-scale * root.travel;
+            y: (parent.height - self.height) / 2;
+            border-radius: root.bar-width / 2;
+            background: root.bar-color;
+            animate background { duration: 180ms; easing: ease-out; }
+        }
+
+        Rectangle {
+            x: (root.bar-width + root.bar-gap) * 3;
+            width: root.bar-width;
+            height: root.min-height + clamp(root.wave-3, 0.0, 1.0) * root.active-scale * root.travel;
+            y: (parent.height - self.height) / 2;
+            border-radius: root.bar-width / 2;
+            background: root.bar-color;
+            animate background { duration: 180ms; easing: ease-out; }
+        }
+
+        Rectangle {
+            x: (root.bar-width + root.bar-gap) * 4;
+            width: root.bar-width;
+            height: root.min-height + clamp(root.wave-4, 0.0, 1.0) * root.active-scale * root.travel;
+            y: (parent.height - self.height) / 2;
+            border-radius: root.bar-width / 2;
+            background: root.bar-color;
+            animate background { duration: 180ms; easing: ease-out; }
+        }
+    }
+}
+
+export component PlasmaOrb inherits Rectangle {
+    in property <image> mascot: @image-url("../assets/plasma_core.png");
+    in property <image> corona: @image-url("../assets/plasma_corona.png");
+    in property <image> aura: @image-url("../assets/plasma_aura.png");
+    in property <float> orb-scale: 1.0;
+    in property <float> orb-glow: 0.48;
+    in property <float> aura-scale: 1.0;
+    in property <float> aura-opacity: 0.48;
+    in property <angle> corona-angle: 0deg;
+    in property <length> orb-offset-x: 0px;
+    in property <length> orb-offset-y: 0px;
+    in property <bool> water-nudge: false;
+    in property <length> orb-size: 28px;
+
+    width: root.orb-size;
+    height: root.orb-size;
+    background: transparent;
+
+    // Soft neutral white outer glow driven by orb-glow + trailing aura-scale.
+    Rectangle {
+        width: root.orb-size * 1.42 * root.aura-scale;
+        height: self.width;
+        x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.16;
+        y: (parent.height - self.height) / 2 + root.orb-offset-y * 0.16;
+        border-radius: self.width / 2;
+        background: @radial-gradient(circle, #FFFFFF22 0%, #FFFFFF0A 52%, transparent 76%);
+        opacity: clamp(root.orb-glow * 0.85, 0.0, 1.0);
+    }
+
+    // Trailing liquid plasma aura layer.
+    Image {
+        source: root.aura;
+        width: root.orb-size * 1.24 * root.aura-scale;
+        height: self.width;
+        x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.16;
+        y: (parent.height - self.height) / 2 + root.orb-offset-y * 0.16;
+        opacity: clamp(root.aura-opacity * 0.72, 0.0, 1.0);
+        image-fit: contain;
+    }
+
+    // Hydration reminder: warm amber halo fades in smoothly when water-nudge is active.
+    Rectangle {
+        width: root.orb-size * 1.50 * root.aura-scale;
+        height: self.width;
+        x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.16;
+        y: (parent.height - self.height) / 2 + root.orb-offset-y * 0.16;
+        border-radius: self.width / 2;
+        background: @radial-gradient(circle, #FBBF2458 0%, #FBBF241C 52%, transparent 78%);
+        opacity: root.water-nudge ? clamp(0.62 + 0.30 * root.orb-glow, 0.0, 1.0) : 0.0;
+        animate opacity {
+            duration: 280ms;
+            easing: ease-out;
+        }
+    }
+
+    // Slowly rotating corona ring, breathing with orb-scale.
+    Image {
+        source: root.corona;
+        width: root.orb-size * root.orb-scale;
+        height: self.width;
+        x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.22;
+        y: (parent.height - self.height) / 2 + root.orb-offset-y * 0.22;
+        transform-rotation: root.corona-angle;
+        opacity: 0.70 + 0.30 * clamp(root.orb-glow, 0.0, 1.0);
+        image-fit: contain;
+    }
+
+    // Ferrofluid core mascot, breathing visibly with orb-scale and tracking cursor.
+    Image {
+        source: root.mascot;
+        width: root.orb-size * 0.84 * root.orb-scale;
+        height: self.width;
+        x: (parent.width - self.width) / 2 + root.orb-offset-x * 0.30;
+        y: (parent.height - self.height) / 2 + root.orb-offset-y * 0.30;
+        opacity: 1.0;
+        image-fit: contain;
+    }
+}

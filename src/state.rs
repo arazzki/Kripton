@@ -57,11 +57,11 @@ impl Page {
 
     pub fn subtitle(self) -> &'static str {
         match self {
-            Page::Music => "SMTC media · live spectrum",
-            Page::Focus => "Pomodoro focus timer",
-            Page::Water => "Daily hydration tracker",
-            Page::Shelf => "Drag & drop file shelf",
-            Page::Todo => "Quick task checklist",
+            Page::Music => "",
+            Page::Focus => "",
+            Page::Water => "",
+            Page::Shelf => "",
+            Page::Todo => "",
         }
     }
 }
@@ -82,12 +82,12 @@ pub enum NotchMode {
 impl NotchMode {
     pub fn size(self) -> (f32, f32) {
         match self {
-            NotchMode::Stealth => (184.0, 5.0),
-            NotchMode::Idle => (336.0, 34.0),
-            NotchMode::CompactHovered => (360.0, 36.0),
-            NotchMode::Closed => (336.0, 34.0),
-            NotchMode::Expanded => (580.0, 224.0),
-            NotchMode::Lyrics => (580.0, 224.0),
+            NotchMode::Stealth => (128.0, 4.0),
+            NotchMode::Idle => (260.0, 28.0),
+            NotchMode::CompactHovered => (276.0, 30.0),
+            NotchMode::Closed => (260.0, 28.0),
+            NotchMode::Expanded => (476.0, 172.0),
+            NotchMode::Lyrics => (476.0, 172.0),
             NotchMode::DeviceHud => crate::hud::HEADPHONE_SIZE,
             NotchMode::ChargingHud => crate::hud::CHARGING_SIZE,
         }
@@ -326,14 +326,14 @@ mod tests {
 
     #[test]
     fn notch_sizes_match_spec() {
-        assert_eq!(NotchMode::Stealth.size(), (184.0, 5.0));
-        assert_eq!(NotchMode::Idle.size(), (336.0, 34.0));
-        assert_eq!(NotchMode::CompactHovered.size(), (360.0, 36.0));
-        assert_eq!(NotchMode::Closed.size(), (336.0, 34.0));
-        assert_eq!(NotchMode::Expanded.size(), (580.0, 224.0));
-        assert_eq!(NotchMode::Lyrics.size(), (580.0, 224.0));
-        assert_eq!(NotchMode::DeviceHud.size(), (320.0, 64.0));
-        assert_eq!(NotchMode::ChargingHud.size(), (300.0, 58.0));
+        assert_eq!(NotchMode::Stealth.size(), (128.0, 4.0));
+        assert_eq!(NotchMode::Idle.size(), (260.0, 28.0));
+        assert_eq!(NotchMode::CompactHovered.size(), (276.0, 30.0));
+        assert_eq!(NotchMode::Closed.size(), (260.0, 28.0));
+        assert_eq!(NotchMode::Expanded.size(), (476.0, 172.0));
+        assert_eq!(NotchMode::Lyrics.size(), (476.0, 172.0));
+        assert_eq!(NotchMode::DeviceHud.size(), (268.0, 54.0));
+        assert_eq!(NotchMode::ChargingHud.size(), (256.0, 50.0));
         assert!(NotchMode::DeviceHud.is_hud());
         assert!(NotchMode::ChargingHud.is_hud());
         assert!(!NotchMode::Expanded.is_hud());

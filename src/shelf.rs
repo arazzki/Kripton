@@ -8,7 +8,9 @@
 
 use std::{
     collections::{HashMap, HashSet},
+    ffi::c_void,
     fs,
+    mem::size_of,
     os::windows::ffi::OsStrExt,
     path::{Path, PathBuf},
     sync::{
@@ -21,9 +23,16 @@ use std::{
 use windows::{
     core::{implement, w, Ref, Result as WinResult, PCWSTR},
     Win32::{
-        Foundation::{HWND, POINTL},
+        Foundation::{HWND, POINTL, SIZE},
+        Graphics::Gdi::{
+            DeleteObject, GetDC, GetDIBits, GetObjectW, ReleaseDC, BITMAP, BITMAPINFO,
+            BITMAPINFOHEADER, BI_RGB, DIB_RGB_COLORS, HBITMAP, HGDIOBJ,
+        },
         System::{
-            Com::{IDataObject, DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL},
+            Com::{
+                CoInitializeEx, CoUninitialize, IDataObject, COINIT_APARTMENTTHREADED,
+                DVASPECT_CONTENT, FORMATETC, TYMED_HGLOBAL,
+            },
             Ole::{
                 IDropTarget, IDropTarget_Impl, RegisterDragDrop, ReleaseStgMedium, RevokeDragDrop,
                 CF_HDROP, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_NONE,
@@ -31,7 +40,10 @@ use windows::{
             SystemServices::MODIFIERKEYS_FLAGS,
         },
         UI::{
-            Shell::{DragQueryFileW, ShellExecuteW, HDROP},
+            Shell::{
+                DragQueryFileW, IShellItemImageFactory, SHCreateItemFromParsingName, ShellExecuteW,
+                HDROP, SIIGBF_BIGGERSIZEOK, SIIGBF_ICONONLY,
+            },
             WindowsAndMessaging::SW_SHOWNORMAL,
         },
     },
@@ -205,7 +217,7 @@ impl ShelfManager {
         }
 
         let mut changed = false;
-        let mut new_images = Vec::new();
+        let mut new_previews = Vec::new();
         {
             let mut shared = self
                 .shared
@@ -225,11 +237,8 @@ impl ShelfManager {
                     .push(entry_from_metadata(path.clone(), &metadata));
                 changed = true;
 
-                if is_image_path(&path)
-                    && !shared.thumbs.contains_key(&path)
-                    && shared.requested.insert(path.clone())
-                {
-                    new_images.push(path);
+                if !shared.thumbs.contains_key(&path) && shared.requested.insert(path.clone()) {
+                    new_previews.push(path);
                 }
             }
 
@@ -252,7 +261,7 @@ impl ShelfManager {
             }
         }
 
-        for path in new_images {
+        for path in new_previews {
             let _ = self.jobs.send(path);
         }
         if changed {
@@ -347,12 +356,8 @@ impl ShelfManager {
                 .shared
                 .lock()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let candidates: Vec<PathBuf> = shared
-                .items
-                .iter()
-                .filter(|item| is_image_path(&item.path))
-                .map(|item| item.path.clone())
-                .collect();
+            let candidates: Vec<PathBuf> =
+                shared.items.iter().map(|item| item.path.clone()).collect();
             let mut missing = Vec::new();
             for path in candidates {
                 if shared.thumbs.contains_key(&path) {
@@ -445,7 +450,7 @@ pub fn format_size(bytes: u64) -> String {
     }
 }
 
-fn is_image_path(path: &Path) -> bool {
+pub(crate) fn is_image_path(path: &Path) -> bool {
     path.extension()
         .and_then(|extension| extension.to_str())
         .map(|extension| {
@@ -488,6 +493,9 @@ fn same_path(a: &Path, b: &Path) -> bool {
 }
 
 fn thumb_worker(receiver: Receiver<PathBuf>, shared: Arc<Mutex<ShelfShared>>) {
+    unsafe {
+        let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+    }
     while let Ok(path) = receiver.recv() {
         let Some(thumb) = load_thumb(&path) else {
             continue;
@@ -498,9 +506,21 @@ fn thumb_worker(receiver: Receiver<PathBuf>, shared: Arc<Mutex<ShelfShared>>) {
         shared.thumbs.insert(path, thumb);
         shared.revision = shared.revision.wrapping_add(1);
     }
+    unsafe {
+        CoUninitialize();
+    }
 }
 
 fn load_thumb(path: &Path) -> Option<ShelfThumb> {
+    if is_image_path(path) {
+        if let Some(thumb) = load_image_thumb(path) {
+            return Some(thumb);
+        }
+    }
+    load_shell_icon(path)
+}
+
+fn load_image_thumb(path: &Path) -> Option<ShelfThumb> {
     let metadata = fs::metadata(path).ok()?;
     if metadata.len() > MAX_THUMB_SOURCE_BYTES {
         return None;
@@ -518,6 +538,98 @@ fn load_thumb(path: &Path) -> Option<ShelfThumb> {
         width,
         height,
         rgba: thumb.into_raw(),
+    })
+}
+
+/// Ask the Windows shell for the same icon Explorer would show for this path.
+/// Shell items can be slow to resolve, so this only ever runs on the thumbnail
+/// worker.
+fn load_shell_icon(path: &Path) -> Option<ShelfThumb> {
+    let wide: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+
+    unsafe {
+        let factory: IShellItemImageFactory =
+            SHCreateItemFromParsingName(PCWSTR(wide.as_ptr()), None).ok()?;
+        let bitmap = factory
+            .GetImage(
+                SIZE {
+                    cx: THUMB_SIZE as i32,
+                    cy: THUMB_SIZE as i32,
+                },
+                SIIGBF_ICONONLY | SIIGBF_BIGGERSIZEOK,
+            )
+            .ok()?;
+        let thumb = hbitmap_to_thumb(bitmap);
+        let _ = DeleteObject(HGDIOBJ(bitmap.0));
+        thumb
+    }
+}
+
+/// Convert a 32-bit HBITMAP (BGRA, usually top-down) into straight RGBA.
+#[allow(clippy::chunks_exact_to_as_chunks)]
+unsafe fn hbitmap_to_thumb(bitmap: HBITMAP) -> Option<ShelfThumb> {
+    let mut info = BITMAP::default();
+    let read = GetObjectW(
+        HGDIOBJ(bitmap.0),
+        size_of::<BITMAP>() as i32,
+        Some(&mut info as *mut BITMAP as *mut c_void),
+    );
+    if read == 0 {
+        return None;
+    }
+
+    let width = info.bmWidth.max(1) as u32;
+    let height = info.bmHeight.max(1) as u32;
+    if width > 512 || height > 512 {
+        return None;
+    }
+
+    let mut header = BITMAPINFO::default();
+    header.bmiHeader.biSize = size_of::<BITMAPINFOHEADER>() as u32;
+    header.bmiHeader.biWidth = width as i32;
+    header.bmiHeader.biHeight = -(height as i32);
+    header.bmiHeader.biPlanes = 1;
+    header.bmiHeader.biBitCount = 32;
+    header.bmiHeader.biCompression = BI_RGB.0;
+
+    let mut rgba = vec![0u8; width as usize * height as usize * 4];
+    let device = GetDC(None);
+    if device.is_invalid() {
+        return None;
+    }
+    let lines = GetDIBits(
+        device,
+        bitmap,
+        0,
+        height,
+        Some(rgba.as_mut_ptr() as *mut c_void),
+        &mut header,
+        DIB_RGB_COLORS,
+    );
+    let _ = ReleaseDC(None, device);
+    if lines == 0 {
+        return None;
+    }
+
+    for pixel in rgba.chunks_exact_mut(4) {
+        pixel.swap(0, 2);
+    }
+    // Some legacy icons report no alpha channel at all. Treat those as opaque
+    // instead of letting them disappear on the dark shelf.
+    if !rgba.chunks_exact(4).any(|pixel| pixel[3] != 0) {
+        for pixel in rgba.chunks_exact_mut(4) {
+            pixel[3] = 255;
+        }
+    }
+
+    Some(ShelfThumb {
+        width,
+        height,
+        rgba,
     })
 }
 

@@ -77,7 +77,12 @@ impl FocusTimer {
         if self.total_ms == 0 {
             return 0.0;
         }
-        (1.0 - self.remaining_ms as f32 / self.total_ms as f32).clamp(0.0, 1.0)
+        let remaining_ms = if self.running {
+            self.deadline_tick.saturating_sub(tick_now())
+        } else {
+            self.remaining_ms
+        };
+        (1.0 - remaining_ms as f64 / self.total_ms as f64).clamp(0.0, 1.0) as f32
     }
 
     pub fn remaining_text(&self) -> String {
@@ -244,5 +249,25 @@ mod tests {
         assert_eq!(completed, FocusPhase::Break);
         assert_eq!(timer.phase(), FocusPhase::Focus);
         assert_eq!(timer.remaining_text(), "25:00");
+    }
+
+    #[test]
+    fn progress_interpolates_while_running_and_preserves_paused_progress() {
+        let mut timer = FocusTimer::new(25);
+        assert_eq!(timer.progress(), 0.0);
+
+        timer.remaining_ms = timer.total_ms / 2;
+        assert!((timer.progress() - 0.5).abs() < 0.001);
+
+        timer.running = true;
+        timer.deadline_tick = tick_now().saturating_add(timer.total_ms / 4);
+        let running_progress = timer.progress();
+        assert!(
+            (running_progress - 0.75).abs() < 0.01,
+            "expected ~0.75 progress while running, got {running_progress}"
+        );
+
+        timer.deadline_tick = tick_now().saturating_sub(500);
+        assert_eq!(timer.progress(), 1.0);
     }
 }

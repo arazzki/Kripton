@@ -1,0 +1,66 @@
+// Kripton — Monochrome White Transparent Glassmorphism design tokens & shared data models.
+
+export struct ShelfView {
+    name: string,
+    size-text: string,
+    is-directory: bool,
+    is-image: bool,
+    has-thumbnail: bool,
+    missing: bool,
+    thumbnail: image,
+    index: int,
+}
+
+export struct TodoView {
+    id: int,
+    text: string,
+    completed: bool,
+}
+
+export global Theme {
+    // Neutral dark smoked glass surfaces (~73%-84% opacity, zero blue tint)
+    out property <color> glass-top: #131316C4;
+    out property <color> glass-bottom: #09090BD6;
+    out property <color> glass-stealth: #0D0D10BA;
+
+    // Inner frosted interactive pills & cards
+    out property <color> glass-pill: #FFFFFF10;
+    out property <color> glass-pill-hover: #FFFFFF1E;
+    out property <color> glass-pill-press: #FFFFFF2C;
+    out property <color> glass-card: #FFFFFF0A;
+    out property <color> glass-card-hover: #FFFFFF14;
+
+    // Specular & hairline glass rims
+    out property <color> glass-rim: #FFFFFF2E;
+    out property <color> glass-rim-subtle: #FFFFFF18;
+    out property <color> glass-specular: #FFFFFF3D;
+    out property <color> glass-divider: #FFFFFF16;
+
+    // Monochrome typography hierarchy
+    out property <color> ink: #FFFFFF;
+    out property <color> ink-2: #FFFFFFB8;
+    out property <color> ink-3: #FFFFFF7A;
+    out property <color> ink-dim: #FFFFFF47;
+
+    // Monochrome white frosted glass accents
+    out property <color> accent: #FFFFFFE6;
+    out property <color> accent-bright: #FFFFFF;
+    out property <color> accent-soft: #FFFFFF24;
+    out property <color> accent-rim: #FFFFFF4D;
+
+    // Semantic status (sparingly used for charging, low battery/hydration nudge, delete hover)
+    out property <color> success: #4ADE80;
+    out property <color> success-soft: #4ADE8022;
+    out property <color> success-rim: #4ADE8055;
+
+    out property <color> warn: #FBBF24;
+    out property <color> warn-soft: #FBBF2422;
+    out property <color> warn-rim: #FBBF2455;
+
+    out property <color> danger: #F87171;
+    out property <color> danger-soft: #F8717122;
+    out property <color> danger-rim: #F8717155;
+
+    out property <color> on-accent: #09090B;
+    out property <color> violet: #FFFFFFCC;
+}

@@ -62,6 +62,9 @@ pub struct MediaSnapshot {
     /// Bumped whenever the track identity changes, so the UI knows to rebuild
     /// the album-art texture.
     pub generation: u64,
+    /// When the timeline position was sampled, so the UI can project it forward
+    /// to the current frame instead of comparing against a stale value.
+    pub sampled_at: Option<Instant>,
 }
 
 impl MediaSnapshot {
@@ -189,6 +192,13 @@ pub fn open_source(aumid: &str) {
     }
 }
 
+fn now_universal_ticks() -> i64 {
+    let unix = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    (unix.as_nanos() / 100) as i64 + 116_444_736_000_000_000
+}
+
 fn media_loop(shared: Arc<Shared>, commands: Receiver<Command>) {
     unsafe {
         let _ = RoInitialize(RO_INIT_MULTITHREADED);
@@ -308,13 +318,29 @@ fn media_loop(shared: Arc<Shared>, commands: Receiver<Command>) {
             .map(|timeline| {
                 let start = timeline.StartTime().map(|span| span.Duration).unwrap_or(0);
                 let end = timeline.EndTime().map(|span| span.Duration).unwrap_or(0);
-                let position = timeline.Position().map(|span| span.Duration).unwrap_or(0);
+                let mut position =
+                    timeline.Position().map(|span| span.Duration).unwrap_or(0) - start;
+                if playing {
+                    if let Ok(updated) = timeline.LastUpdatedTime() {
+                        let now_ticks = now_universal_ticks();
+                        if now_ticks > updated.UniversalTime {
+                            let since_ticks = now_ticks - updated.UniversalTime;
+                            if since_ticks < 6_000_000_000 {
+                                position += since_ticks;
+                            }
+                        }
+                    }
+                }
                 (
-                    ticks_to_ms((position - start).max(0)),
+                    ticks_to_ms(position.max(0)),
                     ticks_to_ms((end - start).max(0)),
                 )
             })
             .unwrap_or((0, 0));
+        // Artwork decoding below can block this worker for a while. Remember
+        // the exact instant the timeline was read so the UI can extrapolate it
+        // to the current frame.
+        let timeline_sampled_at = Instant::now();
 
         let key = format!("{source_app}\u{1}{title}\u{1}{artist}");
         if key != track_key {
@@ -362,6 +388,7 @@ fn media_loop(shared: Arc<Shared>, commands: Receiver<Command>) {
             can_skip_previous,
             can_skip_next,
             generation,
+            sampled_at: Some(timeline_sampled_at),
         };
         *shared
             .snapshot
@@ -387,6 +414,7 @@ fn publish_unavailable(shared: &Shared) {
     snapshot.duration_ms = 0;
     snapshot.can_seek = false;
     snapshot.generation = snapshot.generation.wrapping_add(1);
+    snapshot.sampled_at = None;
     shared
         .artwork
         .lock()

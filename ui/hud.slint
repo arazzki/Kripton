@@ -1,0 +1,243 @@
+// Kripton — Transient hardware HUD views (Headphone & Charging/Power).
+
+import { Theme } from "./theme.slint";
+import { IconHeadphones } from "./icons.slint";
+import { BatteryRing, AudioWave } from "./components.slint";
+
+export component HardwareHudView inherits Rectangle {
+    in property <bool> hud-visible: false;
+    in property <float> hud-alpha: 1.0;
+    in property <bool> hud-device: true;
+    in property <string> hud-title: "";
+    in property <string> hud-status: "Connected";
+    in property <bool> hud-connected: true;
+    in property <bool> hud-charging: false;
+    in property <string> hud-percent-text: "100%";
+
+    // Battery properties for Charging HUD
+    in property <bool> battery-present: true;
+    in property <bool> battery-on-ac: true;
+    in property <float> battery-percent: 100.0;
+    in property <bool> battery-charging: false;
+    in property <float> battery-arc-x: 9.0;
+    in property <float> battery-arc-y: 1.25;
+    in property <bool> battery-arc-large: false;
+    in property <bool> battery-arc-visible: false;
+    in property <bool> battery-full: true;
+
+    // Audio spectrum properties for Headphone HUD
+    in property <float> wave-0: 0.0;
+    in property <float> wave-1: 0.0;
+    in property <float> wave-2: 0.0;
+    in property <float> wave-3: 0.0;
+    in property <float> wave-4: 0.0;
+
+    // Optional breathing driver for status dot pulse
+    in property <float> orb-glow: 0.48;
+
+    private property <float> pulse-norm: clamp((root.orb-glow - 0.34) / 0.28, 0.0, 1.0);
+    private property <bool> power-active: root.hud-charging || root.battery-charging || (root.battery-on-ac && root.battery-full);
+    private property <color> power-tint: root.power-active
+        ? Theme.success
+        : (root.battery-percent <= 20.0 ? Theme.warn : Theme.ink);
+
+    background: transparent;
+    opacity: root.hud-alpha;
+
+    // --- Headphone HUD (268 x 54) ------------------------------------------
+    if (root.hud-visible || root.hud-alpha > 0.005) && root.hud-device: Rectangle {
+        width: 268px;
+        height: 54px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: transparent;
+
+        HorizontalLayout {
+            width: parent.width;
+            height: parent.height;
+            padding-left: 12px;
+            padding-right: 14px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 10px;
+
+            // Clean 34x34 frosted white glass circle
+            Rectangle {
+                width: 34px;
+                background: transparent;
+
+                Rectangle {
+                    width: 34px;
+                    height: 34px;
+                    x: 0px;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 17px;
+                    background: root.hud-connected ? Theme.glass-pill : Theme.warn-soft;
+                    border-width: 1px;
+                    border-color: root.hud-connected ? Theme.glass-rim : Theme.warn-rim;
+                    animate background, border-color {
+                        duration: 180ms;
+                        easing: ease-out;
+                    }
+
+                    IconHeadphones {
+                        width: 17px;
+                        height: 17px;
+                        x: (parent.width - self.width) / 2;
+                        y: (parent.height - self.height) / 2;
+                        tint: root.hud-connected ? Theme.ink : Theme.warn;
+                    }
+                }
+            }
+
+            // Device title + subtle status indicator
+            VerticalLayout {
+                horizontal-stretch: 1;
+                min-width: 0px;
+                alignment: center;
+                spacing: 2px;
+
+                Text {
+                    min-width: 0px;
+                    text: root.hud-title;
+                    color: Theme.ink;
+                    font-size: 12.5px;
+                    font-weight: 600;
+                    overflow: TextOverflow.elide;
+                }
+
+                HorizontalLayout {
+                    spacing: 5px;
+                    alignment: start;
+
+                    Rectangle {
+                        width: 6px;
+                        height: 12px;
+                        background: transparent;
+
+                        Rectangle {
+                            width: 6px;
+                            height: 6px;
+                            x: 0px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 3px;
+                            background: root.hud-connected ? Theme.success : Theme.warn;
+                            opacity: 0.72 + 0.28 * root.pulse-norm;
+                        }
+                    }
+
+                    Text {
+                        min-width: 0px;
+                        text: root.hud-status;
+                        color: root.hud-connected ? Theme.ink-2 : Theme.warn;
+                        font-size: 10.5px;
+                        font-weight: 500;
+                        vertical-alignment: center;
+                        overflow: TextOverflow.elide;
+                    }
+                }
+            }
+
+            // Live 5-bar pure white audio visualizer
+            Rectangle {
+                width: hud-wave.width;
+                background: transparent;
+
+                hud-wave := AudioWave {
+                    x: 0px;
+                    y: (parent.height - self.height) / 2;
+                    wave-0: root.wave-0;
+                    wave-1: root.wave-1;
+                    wave-2: root.wave-2;
+                    wave-3: root.wave-3;
+                    wave-4: root.wave-4;
+                    bar-width: 2.5px;
+                    bar-gap: 2.5px;
+                    max-height: 18px;
+                    min-height: 3px;
+                    bar-color: root.hud-connected ? Theme.accent : Theme.ink-dim;
+                    active: root.hud-connected;
+                    inactive-opacity: 0.72;
+                }
+            }
+        }
+    }
+
+    // --- Charging / Power HUD (256 x 50) -----------------------------------
+    if (root.hud-visible || root.hud-alpha > 0.005) && !root.hud-device: Rectangle {
+        width: 256px;
+        height: 50px;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: transparent;
+
+        HorizontalLayout {
+            width: parent.width;
+            height: parent.height;
+            padding-left: 12px;
+            padding-right: 14px;
+            padding-top: 8px;
+            padding-bottom: 8px;
+            spacing: 10px;
+
+            // Clean 30x30 BatteryRing with IconBolt center
+            Rectangle {
+                width: 30px;
+                background: transparent;
+
+                BatteryRing {
+                    x: 0px;
+                    y: (parent.height - self.height) / 2;
+                    ring-size: 30px;
+                    percent: root.battery-percent;
+                    charging: root.power-active;
+                    present: root.battery-present;
+                    on-ac: root.battery-on-ac || root.hud-charging;
+                    arc-x: root.battery-arc-x;
+                    arc-y: root.battery-arc-y;
+                    arc-large: root.battery-arc-large;
+                    arc-visible: root.battery-arc-visible;
+                    full: root.battery-full;
+                    show-bolt: true;
+                }
+            }
+
+            // Status title & subtitle
+            VerticalLayout {
+                horizontal-stretch: 1;
+                min-width: 0px;
+                alignment: center;
+                spacing: 1px;
+
+                Text {
+                    min-width: 0px;
+                    text: root.hud-title;
+                    color: Theme.ink;
+                    font-size: 12.5px;
+                    font-weight: 600;
+                    overflow: TextOverflow.elide;
+                }
+
+                Text {
+                    min-width: 0px;
+                    text: root.hud-status;
+                    color: root.power-active
+                        ? Theme.success
+                        : (root.battery-percent <= 20.0 ? Theme.warn : Theme.ink-3);
+                    font-size: 10.5px;
+                    font-weight: 500;
+                    overflow: TextOverflow.elide;
+                }
+            }
+
+            // Crisp 18px percentage readout
+            Text {
+                text: root.hud-percent-text;
+                color: root.power-tint;
+                font-size: 18px;
+                font-weight: 700;
+                vertical-alignment: center;
+            }
+        }
+    }
+}

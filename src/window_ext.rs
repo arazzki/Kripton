@@ -57,12 +57,18 @@ use crate::{
 const HOVER_CLOSE_DELAY: Duration = Duration::from_millis(350);
 const HOVER_POLL_INTERVAL: Duration = Duration::from_millis(16);
 pub const HIT_MARGIN: f32 = 12.0;
-pub const WAKE_STRIP_W: f32 = 200.0;
+pub const WAKE_STRIP_W: f32 = 148.0;
 pub const WAKE_STRIP_H: f32 = 6.0;
-const LIVING_EVERY: u64 = 3; // Living properties update at ~20 fps.
+const LIVING_EVERY: u64 = 3; // Fallback living cadence (~20 fps) during deep idle Stealth.
 const MEDIA_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const POWER_POLL_INTERVAL: Duration = Duration::from_millis(250);
-const COLLAPSE_REVEAL_WIDTH: f32 = 380.0;
+const COLLAPSE_REVEAL_WIDTH: f32 = 320.0;
+const MIN_NOTCH_WIDTH: f32 = 16.0;
+const MIN_NOTCH_HEIGHT: f32 = 2.0;
+
+fn clamp_notch_size(width: f32, height: f32) -> (f32, f32) {
+    (width.max(MIN_NOTCH_WIDTH), height.max(MIN_NOTCH_HEIGHT))
+}
 
 thread_local! {
     /// Set after the user explicitly collapses the notch with a click. Hover
@@ -79,6 +85,8 @@ struct Morph {
     width: Spring,
     height: Spring,
     config: SpringConfig,
+    /// Last mode applied so steady-state 16ms ticks do not rewrite Slint flags.
+    current_mode: Option<NotchMode>,
     /// A collapse requested while the notch is still wide. The expanded shell
     /// stays visible until the spring is close to compact size.
     pending_collapse: Option<NotchMode>,
@@ -91,6 +99,7 @@ impl Morph {
             width: Spring::new(width),
             height: Spring::new(height),
             config: SpringConfig::default(),
+            current_mode: None,
             pending_collapse: None,
         }
     }
@@ -319,12 +328,22 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
     let (width, height) = mode.size();
     let expanded = matches!(mode, NotchMode::Expanded | NotchMode::Lyrics);
     let hud = mode.is_hud();
-    let stealth = matches!(mode, NotchMode::Stealth);
 
     MORPH.with(|morph| {
         let mut morph = morph.borrow_mut();
+        if morph.current_mode == Some(mode) {
+            return;
+        }
+        let initial = morph.current_mode.is_none();
+        morph.current_mode = Some(mode);
         morph.width.set_target(width);
         morph.height.set_target(height);
+        if initial {
+            let (clamped_w, clamped_h) =
+                clamp_notch_size(morph.width.value(), morph.height.value());
+            app.set_notch_width(clamped_w);
+            app.set_notch_height(clamped_h);
+        }
 
         if hud {
             morph.pending_collapse = None;
@@ -339,23 +358,51 @@ pub fn apply_mode(app: &AppWindow, mode: NotchMode) {
             app.set_closed(false);
             app.set_hud_visible(false);
         } else if app.get_expanded() && morph.width.value() > COLLAPSE_REVEAL_WIDTH {
-            // Keep the expanded shell visible until the black shape has shrunk
-            // close to compact size, then swap content in the runtime tick.
+            // Keep the expanded shell visible until the notch shape has shrunk
+            // close to compact size, so geometry-coupled opacity fades cleanly
+            // before swapping content in the runtime tick.
             morph.pending_collapse = Some(mode);
         } else {
             morph.pending_collapse = None;
-            app.set_stealth(stealth);
-            app.set_expanded(false);
-            let show_closed = matches!(mode, NotchMode::Closed | NotchMode::CompactHovered);
-            app.set_closed(show_closed);
-            app.set_hud_visible(false);
+            apply_collapsed_flags(app, mode);
         }
     });
 }
 
-/// Baseline mode when inactive: Stealth mode (184x5 px).
-pub fn collapsed_mode() -> NotchMode {
-    NotchMode::Stealth
+fn apply_collapsed_flags(app: &AppWindow, mode: NotchMode) {
+    app.set_expanded(false);
+    app.set_stealth(matches!(mode, NotchMode::Stealth));
+    app.set_closed(matches!(
+        mode,
+        NotchMode::Closed | NotchMode::CompactHovered
+    ));
+    app.set_hud_visible(false);
+}
+
+/// Smart Adaptive collapsed mode: stays visible as Closed Compact Pill (260x28 px)
+/// when media or focus is active, otherwise collapses to Stealth (128x4 px).
+pub fn collapsed_mode(media_active: bool, focus_active: bool) -> NotchMode {
+    if media_active || focus_active {
+        NotchMode::Closed
+    } else {
+        NotchMode::Stealth
+    }
+}
+
+pub fn media_active() -> bool {
+    MEDIA_ACTIVE.with(Cell::get)
+}
+
+/// Triggers a non-blank single-frame page transition (`0.15` -> `1.0` after 16 ms)
+/// so Slint registers property changes cleanly without a 20 ms blank flash.
+pub fn trigger_page_transition(app: &AppWindow) {
+    app.set_page_fade(0.15);
+    let weak_fade = app.as_weak();
+    Timer::single_shot(Duration::from_millis(16), move || {
+        if let Some(app) = weak_fade.upgrade() {
+            app.set_page_fade(1.0);
+        }
+    });
 }
 
 pub fn install_overlay(
@@ -419,6 +466,9 @@ struct PlaybackClock {
     duration_ms: u64,
     playing: bool,
     synced_at: Instant,
+    /// Tiny rate multiplier used to glide towards a fresh SMTC sample instead
+    /// of snapping the progress bar backwards or forwards on every poll.
+    rate: f64,
 }
 
 impl PlaybackClock {
@@ -426,13 +476,20 @@ impl PlaybackClock {
         if !self.playing {
             return self.position_ms;
         }
-        let elapsed = now.saturating_duration_since(self.synced_at).as_millis() as u64;
-        let projected = self.position_ms.saturating_add(elapsed);
+        let elapsed = now.saturating_duration_since(self.synced_at).as_millis() as f64;
+        let projected = (self.position_ms as f64 + elapsed * self.rate).max(0.0) as u64;
         if self.duration_ms > 0 {
             projected.min(self.duration_ms)
         } else {
             projected
         }
+    }
+
+    /// Freeze the current projection at `now` so the rate can be changed
+    /// without introducing a jump.
+    fn rebase(&mut self, now: Instant) {
+        self.position_ms = self.position(now);
+        self.synced_at = now;
     }
 }
 
@@ -450,8 +507,12 @@ struct Runtime {
     track_generation: u64,
     playback: PlaybackClock,
     elapsed_seconds: u64,
+    /// Ignore SMTC position samples for a short window after a local seek, so
+    /// the player has time to actually jump before we re-sync to it.
+    seek_grace_until: Option<Instant>,
     lyrics: crate::lyrics::LyricsManager,
-    current_lyrics: Option<crate::lyrics::SyncedLyrics>,
+    lyrics_revision: i32,
+    lyrics_fade_at: Option<Instant>,
     last_lyrics_track: String,
     last_synced_line: Option<String>,
     store: crate::state::StateStore,
@@ -517,10 +578,13 @@ fn install_runtime(
             duration_ms: 0,
             playing: false,
             synced_at: Instant::now(),
+            rate: 1.0,
         },
         elapsed_seconds: u64::MAX,
+        seek_grace_until: None,
         lyrics: crate::lyrics::LyricsManager::default(),
-        current_lyrics: None,
+        lyrics_revision: 0,
+        lyrics_fade_at: None,
         last_lyrics_track: String::new(),
         last_synced_line: None,
         store,
@@ -624,6 +688,12 @@ fn install_runtime(
                 runtime.shelf_fade_at = None;
             }
         }
+        if let Some(fade_at) = runtime.lyrics_fade_at {
+            if now.duration_since(fade_at) >= Duration::from_millis(12) {
+                app.set_lyrics_line_fade(1.0);
+                runtime.lyrics_fade_at = None;
+            }
+        }
 
         // Productivity: Pomodoro countdown, daily rollover, hydration nudge and
         // the animated water surface.
@@ -636,18 +706,16 @@ fn install_runtime(
             let width_moving = morph.width.step(dt, config);
             let height_moving = morph.height.step(dt, config);
             if width_moving || height_moving {
-                app.set_notch_width(morph.width.value());
-                app.set_notch_height(morph.height.value());
+                let (clamped_w, clamped_h) =
+                    clamp_notch_size(morph.width.value(), morph.height.value());
+                app.set_notch_width(clamped_w);
+                app.set_notch_height(clamped_h);
             }
 
             if let Some(mode) = morph.pending_collapse {
                 if morph.width.value() <= COLLAPSE_REVEAL_WIDTH {
                     morph.pending_collapse = None;
-                    app.set_expanded(false);
-                    app.set_stealth(matches!(mode, NotchMode::Stealth));
-                    let show_closed = matches!(mode, NotchMode::Closed | NotchMode::CompactHovered);
-                    app.set_closed(show_closed);
-                    app.set_hud_visible(false);
+                    apply_collapsed_flags(&app, mode);
                 }
             }
         });
@@ -670,8 +738,8 @@ fn install_runtime(
                 // User explicitly clicked to collapse; stay in compact mode until pointer leaves.
             } else if !app.get_expanded() {
                 // When cursor enters the domain (e.g. wakes from Stealth or hovers Closed bar),
-                // wake up to Compact Pill mode (360x36 hovered).
-                // DO NOT auto-expand to 580x192 HUD! Expansion happens only on user click.
+                // wake up to Compact Pill mode (276x30 hovered).
+                // DO NOT auto-expand to 476x172 HUD! Expansion happens only on user click.
                 apply_mode(&app, NotchMode::CompactHovered);
             }
         } else {
@@ -680,7 +748,10 @@ fn install_runtime(
             if app.get_expanded() {
                 let left = *runtime.left_at.get_or_insert(now);
                 if now.duration_since(left) >= HOVER_CLOSE_DELAY {
-                    apply_mode(&app, collapsed_mode());
+                    apply_mode(
+                        &app,
+                        collapsed_mode(runtime.media_active, runtime.focus.active()),
+                    );
                     runtime.left_at = None;
                 }
             } else if runtime.focus_celebrate_at.is_some() {
@@ -688,7 +759,10 @@ fn install_runtime(
                 apply_mode(&app, NotchMode::CompactHovered);
                 runtime.left_at = None;
             } else {
-                apply_mode(&app, collapsed_mode());
+                apply_mode(
+                    &app,
+                    collapsed_mode(runtime.media_active, runtime.focus.active()),
+                );
                 runtime.left_at = None;
             }
         }
@@ -698,19 +772,26 @@ fn install_runtime(
             update_timeline(&app, &mut runtime, now);
         }
 
-        // Living mascot at ~20 fps, driven by the real spectrum.
-        if runtime.ticks.is_multiple_of(LIVING_EVERY) {
+        // Living mascot & spectrum at 60 fps whenever visible, active, or
+        // near the cursor; fall back to ~20 fps only during deep idle Stealth.
+        let cursor = overlay.cursor_relative_to_notch(&app);
+        let cursor_near = cursor.is_some_and(|(x, y)| x * x + y * y <= 320.0 * 320.0);
+        let living_60fps = !app.get_stealth()
+            || runtime.media_active
+            || runtime.focus_celebrate_at.is_some()
+            || cursor_near;
+        if living_60fps || runtime.ticks.is_multiple_of(LIVING_EVERY) {
             let living_dt = (now - runtime.last_living).as_secs_f32().clamp(0.001, 0.1);
             runtime.last_living = now;
 
             let frame = living.tick(
                 living_dt,
-                overlay.cursor_relative_to_notch(&app),
+                cursor,
                 runtime.audio.peak(),
                 runtime.playing,
                 runtime.audio.bands(),
             );
-            apply_living(&app, &frame);
+            apply_living(&app, &frame, runtime.focus_celebrate_at.is_some());
 
             if frame.media_active != runtime.media_active {
                 runtime.media_active = frame.media_active;
@@ -719,7 +800,10 @@ fn install_runtime(
                     if overlay.cursor_inside_notch(&app) {
                         apply_mode(&app, NotchMode::CompactHovered);
                     } else {
-                        apply_mode(&app, collapsed_mode());
+                        apply_mode(
+                            &app,
+                            collapsed_mode(runtime.media_active, runtime.focus.active()),
+                        );
                     }
                 }
             }
@@ -740,7 +824,10 @@ fn drain_tray_actions(app: &AppWindow, runtime: &mut Runtime, overlay: OverlayWi
                 overlay.set_visible(runtime.window_visible);
                 runtime.tray.set_visible(runtime.window_visible);
                 if runtime.window_visible {
-                    apply_mode(app, collapsed_mode());
+                    apply_mode(
+                        app,
+                        collapsed_mode(runtime.media_active, runtime.focus.active()),
+                    );
                     app.window().request_redraw();
                 }
             }
@@ -750,6 +837,12 @@ fn drain_tray_actions(app: &AppWindow, runtime: &mut Runtime, overlay: OverlayWi
                 }
             }
             TrayAction::SetLyrics(enabled) => {
+                if app.get_lyrics_enabled() != enabled
+                    && app.get_expanded()
+                    && app.get_active_page() == 0
+                {
+                    trigger_page_transition(app);
+                }
                 app.set_lyrics_enabled(enabled);
                 runtime.store.update(|state| state.lyrics_enabled = enabled);
                 runtime.tray.set_lyrics(enabled);
@@ -892,9 +985,16 @@ fn install_media_callbacks(app: &AppWindow, runtime: &Rc<RefCell<Runtime>>) {
         let target = (fraction as f64 * duration as f64).round() as u64;
         runtime.playback.position_ms = target;
         runtime.playback.synced_at = Instant::now();
+        runtime.playback.rate = 1.0;
         runtime.elapsed_seconds = target / 1000;
+        // SMTC keeps reporting the old position for a moment after a seek.
+        // Hold the local clock steady until the player catches up.
+        runtime.seek_grace_until = Some(Instant::now() + Duration::from_millis(2000));
         runtime.media.seek(target);
         app_show_position(&weak_commit, fraction, target, duration);
+        if let Some(app) = weak_commit.upgrade() {
+            update_lyrics_sync(&app, &mut runtime, target);
+        }
     });
 
     let weak_lyrics = app.as_weak();
@@ -902,13 +1002,7 @@ fn install_media_callbacks(app: &AppWindow, runtime: &Rc<RefCell<Runtime>>) {
     app.on_lyrics_toggle(move || {
         if let Some(app) = weak_lyrics.upgrade() {
             let new_state = !app.get_lyrics_enabled();
-            app.set_page_fade(0.0);
-            let weak_fade = app.as_weak();
-            Timer::single_shot(Duration::from_millis(20), move || {
-                if let Some(app) = weak_fade.upgrade() {
-                    app.set_page_fade(1.0);
-                }
-            });
+            trigger_page_transition(&app);
             app.set_lyrics_enabled(new_state);
             runtime_lyrics
                 .borrow()
@@ -983,15 +1077,13 @@ fn install_shelf_callbacks(app: &AppWindow, runtime: &Rc<RefCell<Runtime>>) {
 
 fn open_shelf_page(app: &AppWindow, runtime: &mut Runtime) {
     let page = Page::Shelf;
-    if app.get_active_page() != page.index() as i32 {
-        app.set_page_fade(0.0);
-        let weak_fade = app.as_weak();
-        Timer::single_shot(Duration::from_millis(20), move || {
-            if let Some(app) = weak_fade.upgrade() {
-                app.set_page_fade(1.0);
-            }
-        });
-        app.set_active_page(page.index() as i32);
+    let current = app.get_active_page();
+    let target = page.index() as i32;
+    if current != target {
+        let direction = if target >= current { 1 } else { -1 };
+        app.set_page_direction(direction);
+        trigger_page_transition(app);
+        app.set_active_page(target);
         app.set_page_title(page.title().into());
         app.set_page_subtitle(page.subtitle().into());
         runtime
@@ -1019,6 +1111,7 @@ fn rebuild_shelf(app: &AppWindow, runtime: &mut Runtime) {
                 item.size_text.clone().into()
             },
             is_directory: item.is_directory,
+            is_image: shelf::is_image_path(&item.path),
             has_thumbnail: snapshot.thumbs.contains_key(&item.path),
             missing: item.missing,
             thumbnail: snapshot
@@ -1044,9 +1137,9 @@ fn rebuild_shelf(app: &AppWindow, runtime: &mut Runtime) {
 
 fn shelf_summary(len: usize) -> String {
     match len {
-        0 => "Shelf is empty".to_string(),
-        1 => "1 item · drop more files".to_string(),
-        count => format!("{count} items · drop more files"),
+        0 => "No items yet".to_string(),
+        1 => "1 item".to_string(),
+        count => format!("{count} items"),
     }
 }
 
@@ -1061,6 +1154,19 @@ fn shelf_thumb_image(thumb: &ShelfThumb) -> slint::Image {
 
 const TODO_ROW_HEIGHT: f32 = 26.0;
 const FOCUS_CELEBRATE: Duration = Duration::from_secs(3);
+
+fn clamp_todo_reorder_target(index: i32, dy: f32, len: usize) -> Option<usize> {
+    if index < 0 || len == 0 {
+        return None;
+    }
+    let from = index as usize;
+    if from >= len {
+        return None;
+    }
+    let delta = (dy / TODO_ROW_HEIGHT).round() as i32;
+    let max_index = (len - 1) as i32;
+    Some((index + delta).clamp(0, max_index) as usize)
+}
 
 fn install_productivity_callbacks(
     app: &AppWindow,
@@ -1221,19 +1327,15 @@ fn install_productivity_callbacks(
     let runtime_reorder = runtime.clone();
     let weak_reorder = app.as_weak();
     app.on_todo_reorder(move |index, dy| {
-        if index < 0 {
-            return;
-        }
         let Some(app) = weak_reorder.upgrade() else {
             return;
         };
         let mut runtime = runtime_reorder.borrow_mut();
-        let from = index as usize;
-        let target = index + (dy / TODO_ROW_HEIGHT).round() as i32;
-        if target < 0 || target as usize >= runtime.todos.len() {
+        let Some(target) = clamp_todo_reorder_target(index, dy, runtime.todos.len()) else {
             return;
-        }
-        if todo::move_item(&mut runtime.todos, from, target as usize) {
+        };
+        let from = index as usize;
+        if todo::move_item(&mut runtime.todos, from, target) {
             persist_todos(&runtime);
             rebuild_todos(&app, &runtime);
         }
@@ -1267,6 +1369,8 @@ fn update_productivity(
         app.set_focus_progress(runtime.focus.progress());
         app.set_focus_running(runtime.focus.running());
         app.set_focus_active(runtime.focus.active());
+    } else if runtime.focus.running() {
+        app.set_focus_progress(runtime.focus.progress());
     }
 
     // Midnight rollover for the focus and water counters.
@@ -1366,9 +1470,9 @@ fn sync_focus_ui(app: &AppWindow, runtime: &mut Runtime) {
         .with(|state| state.focus_timer.completed_sessions_today);
     app.set_focus_completed(completed as i32);
     let session = if runtime.focus.phase() == FocusPhase::Focus {
-        format!("Focus Session #{}", completed + 1)
+        format!("Focus session #{}", completed + 1)
     } else {
-        "Short Break".to_string()
+        "Short break".to_string()
     };
     app.set_focus_session(session.into());
 }
@@ -1426,11 +1530,14 @@ fn app_show_position(weak: &Weak<AppWindow>, fraction: f32, position: u64, durat
 
 fn poll_media(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
     let snapshot = runtime.media.snapshot();
+    let track_changed = snapshot.generation != runtime.track_generation;
 
-    if snapshot.generation != runtime.track_generation {
+    if track_changed {
         runtime.track_generation = snapshot.generation;
         app.set_has_album_art(false);
         app.set_lyrics_glow_color(slint::Color::from_argb_u8(255, 30, 58, 138));
+        runtime.seek_grace_until = None;
+        runtime.last_synced_line = None;
     }
 
     // Artwork is decoded on the SMTC worker; the texture must be built here on
@@ -1454,7 +1561,12 @@ fn poll_media(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
     let subtitle = if snapshot.available {
         snapshot.subtitle()
     } else {
-        "Start a track in any media app".to_string()
+        "Start a track in any app".to_string()
+    };
+    let source = if snapshot.available {
+        snapshot.source_app.clone()
+    } else {
+        String::new()
     };
 
     app.set_media_available(snapshot.available);
@@ -1468,26 +1580,85 @@ fn poll_media(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
     if app.get_track_subtitle().as_str() != subtitle.as_str() {
         app.set_track_subtitle(subtitle.into());
     }
+    if app.get_media_source().as_str() != source.as_str() {
+        app.set_media_source(source.into());
+    }
 
-    let track_changed = snapshot.generation != runtime.track_generation;
+    let duration_ms = snapshot.duration_ms;
+    // Extrapolate the SMTC sample to `now`. The worker may have spent time
+    // decoding artwork after reading the timeline, so using the raw position
+    // here would make the clock lag by a variable amount.
+    let sampled_age_ms = snapshot
+        .sampled_at
+        .map(|at| now.saturating_duration_since(at).as_millis() as u64)
+        .unwrap_or(0)
+        .min(5_000);
+    let expected = if snapshot.playing {
+        snapshot.position_ms.saturating_add(sampled_age_ms)
+    } else {
+        snapshot.position_ms
+    };
+    let expected = if duration_ms > 0 {
+        expected.min(duration_ms)
+    } else {
+        expected
+    };
+
+    let projected = runtime.playback.position(now);
+    let drift = expected as i64 - projected as i64;
     let playing_changed = snapshot.playing != runtime.playback.playing;
-    let current_projected = runtime.playback.position(now);
-    let drift_ms = (snapshot.position_ms as i64 - current_projected as i64).abs();
+    let in_seek_grace = runtime.seek_grace_until.is_some_and(|until| now < until);
+    if !in_seek_grace {
+        runtime.seek_grace_until = None;
+    }
 
-    // Resync clock only on track change, play/pause change, initial start,
-    // or when position drifted significantly (e.g. user seeked in player).
-    // During smooth playback, keep local monotonic clock running continuously
-    // without resetting synced_at on every poll.
-    if track_changed || playing_changed || !runtime.playback.playing || drift_ms > 1500 {
+    if in_seek_grace {
+        // If the player has caught up to our seek position within 1 second,
+        // clear the grace period early.
+        if (expected as i64 - runtime.playback.position_ms as i64).abs() < 1000 {
+            runtime.seek_grace_until = None;
+        }
+        runtime.playback.duration_ms = duration_ms;
+        runtime.playback.playing = snapshot.playing;
+    } else if !snapshot.playing {
+        // Paused: anchor to the player's exact position.
+        if track_changed || playing_changed || drift.abs() > 400 {
+            runtime.playback = PlaybackClock {
+                position_ms: expected,
+                duration_ms,
+                playing: false,
+                synced_at: now,
+                rate: 1.0,
+            };
+            runtime.elapsed_seconds = u64::MAX;
+        } else {
+            runtime.playback.position_ms = expected;
+            runtime.playback.duration_ms = duration_ms;
+        }
+    } else if track_changed || playing_changed || drift.abs() > 2_000 {
+        // New track, transport change, or a large discontinuity (for example
+        // the user seeked in the external player): snap once, then run locally.
         runtime.playback = PlaybackClock {
-            position_ms: snapshot.position_ms,
-            duration_ms: snapshot.duration_ms,
-            playing: snapshot.playing,
+            position_ms: expected,
+            duration_ms,
+            playing: true,
             synced_at: now,
+            rate: 1.0,
         };
         runtime.elapsed_seconds = u64::MAX;
     } else {
-        runtime.playback.duration_ms = snapshot.duration_ms;
+        // Normal playback: keep the monotonic clock running smoothly.
+        // SMTC polling naturally jitters by +/-200ms; ignore minor drift.
+        // For drift > 400ms, apply a tiny, imperceptible nudge (max +/-3%)
+        // that seamlessly closes the gap over several seconds without any jerkiness.
+        runtime.playback.rebase(now);
+        runtime.playback.rate = if drift.abs() > 400 {
+            1.0 + (drift as f64 / 30_000.0).clamp(-0.03, 0.03)
+        } else {
+            1.0
+        };
+        runtime.playback.duration_ms = duration_ms;
+        runtime.playback.playing = true;
     }
     runtime.playing = snapshot.playing;
 }
@@ -1516,16 +1687,42 @@ fn update_timeline(app: &AppWindow, runtime: &mut Runtime, now: Instant) {
     update_lyrics_sync(app, runtime, position);
 }
 
+fn bump_lyrics_transition(app: &AppWindow, runtime: &mut Runtime) {
+    runtime.lyrics_revision = runtime.lyrics_revision.wrapping_add(1);
+    app.set_lyrics_revision(runtime.lyrics_revision);
+    app.set_lyrics_line_fade(0.25);
+    runtime.lyrics_fade_at = Some(Instant::now());
+}
+
+fn show_lyrics_line(app: &AppWindow, runtime: &mut Runtime, prev: &str, curr: &str, next: &str) {
+    bump_lyrics_transition(app, runtime);
+    app.set_lyrics_line_prev(prev.into());
+    app.set_lyrics_line_curr(curr.into());
+    app.set_lyrics_line_next(next.into());
+}
+
+fn show_lyrics_message(
+    app: &AppWindow,
+    runtime: &mut Runtime,
+    text: &str,
+    available: bool,
+    loading: bool,
+) {
+    bump_lyrics_transition(app, runtime);
+    app.set_lyrics_available(available);
+    app.set_lyrics_loading(loading);
+    app.set_lyrics_line_prev("".into());
+    app.set_lyrics_line_curr(text.into());
+    app.set_lyrics_line_next("".into());
+}
+
 fn update_lyrics_sync(app: &AppWindow, runtime: &mut Runtime, position_ms: u64) {
     let snapshot = runtime.media.snapshot();
     if !snapshot.available || snapshot.title.is_empty() {
         if runtime.last_synced_line.is_some() {
             runtime.last_synced_line = None;
-            app.set_lyrics_available(false);
-            app.set_lyrics_loading(false);
-            app.set_lyrics_line_curr("Play a track to see lyrics".into());
-            app.set_lyrics_line_prev("".into());
-            app.set_lyrics_line_next("".into());
+            runtime.last_lyrics_track.clear();
+            show_lyrics_message(app, runtime, "Play a track to see lyrics", false, false);
         }
         return;
     }
@@ -1533,20 +1730,16 @@ fn update_lyrics_sync(app: &AppWindow, runtime: &mut Runtime, position_ms: u64) 
     let track_key = crate::lyrics::LyricsManager::track_key(&snapshot.artist, &snapshot.title);
     if runtime.last_lyrics_track != track_key {
         runtime.last_lyrics_track = track_key;
-        runtime.current_lyrics =
-            runtime
-                .lyrics
-                .get_or_fetch(&snapshot.artist, &snapshot.title, snapshot.duration_ms);
         runtime.last_synced_line = None;
-    } else if runtime.current_lyrics.is_none() {
-        runtime.current_lyrics =
-            runtime
-                .lyrics
-                .get_or_fetch(&snapshot.artist, &snapshot.title, snapshot.duration_ms);
     }
 
-    match &runtime.current_lyrics {
-        Some(lyrics) if lyrics.is_synced => {
+    let status =
+        runtime
+            .lyrics
+            .query_or_fetch(&snapshot.artist, &snapshot.title, snapshot.duration_ms);
+
+    match status {
+        crate::lyrics::LyricsStatus::Found(lyrics) if lyrics.is_synced => {
             let (prev, curr, next) = lyrics.current_window(position_ms);
             let curr_str = curr.unwrap_or("♪ ♪ ♪");
             let line_signature =
@@ -1555,35 +1748,36 @@ fn update_lyrics_sync(app: &AppWindow, runtime: &mut Runtime, position_ms: u64) 
                 runtime.last_synced_line = Some(line_signature);
                 app.set_lyrics_available(true);
                 app.set_lyrics_loading(false);
-                app.set_lyrics_line_prev(prev.unwrap_or("").into());
-                app.set_lyrics_line_curr(curr_str.into());
-                app.set_lyrics_line_next(next.unwrap_or("").into());
+                show_lyrics_line(
+                    app,
+                    runtime,
+                    prev.unwrap_or(""),
+                    curr_str,
+                    next.unwrap_or(""),
+                );
             }
         }
-        Some(lyrics) => {
+        crate::lyrics::LyricsStatus::Found(lyrics) => {
             if runtime.last_synced_line.as_deref() != Some("unsynced") {
                 runtime.last_synced_line = Some("unsynced".into());
-                app.set_lyrics_available(false);
-                app.set_lyrics_loading(false);
-                app.set_lyrics_line_curr(
-                    lyrics
-                        .plain_lyrics
-                        .as_deref()
-                        .unwrap_or("Lyrics unavailable")
-                        .into(),
-                );
-                app.set_lyrics_line_prev("".into());
-                app.set_lyrics_line_next("".into());
+                let text = lyrics
+                    .plain_lyrics
+                    .as_deref()
+                    .unwrap_or("Lyrics unavailable")
+                    .to_string();
+                show_lyrics_message(app, runtime, &text, false, false);
             }
         }
-        None => {
+        crate::lyrics::LyricsStatus::Loading => {
             if runtime.last_synced_line.as_deref() != Some("loading") {
                 runtime.last_synced_line = Some("loading".into());
-                app.set_lyrics_available(false);
-                app.set_lyrics_loading(true);
-                app.set_lyrics_line_curr("Looking for lyrics...".into());
-                app.set_lyrics_line_prev("".into());
-                app.set_lyrics_line_next("".into());
+                show_lyrics_message(app, runtime, "Looking for lyrics…", false, true);
+            }
+        }
+        crate::lyrics::LyricsStatus::NotFound => {
+            if runtime.last_synced_line.as_deref() != Some("not_found") {
+                runtime.last_synced_line = Some("not_found".into());
+                show_lyrics_message(app, runtime, "No lyrics found", false, false);
             }
         }
     }
@@ -1608,11 +1802,13 @@ fn format_time(milliseconds: u64) -> String {
     }
 }
 
-fn apply_living(app: &AppWindow, frame: &LivingFrame) {
+fn apply_living(app: &AppWindow, frame: &LivingFrame, celebrating: bool) {
     app.set_orb_scale(frame.orb_scale);
-    app.set_orb_glow(frame.orb_glow);
     app.set_aura_scale(frame.aura_scale);
-    app.set_aura_opacity(frame.aura_opacity);
+    if !celebrating {
+        app.set_orb_glow(frame.orb_glow);
+        app.set_aura_opacity(frame.aura_opacity);
+    }
     app.set_corona_angle(frame.corona_angle);
     app.set_orb_offset_x(frame.orb_offset_x);
     app.set_orb_offset_y(frame.orb_offset_y);
@@ -1646,5 +1842,30 @@ mod tests {
         assert_ne!(cleaned & WS_EX_TOOLWINDOW.0, 0);
         assert_ne!(cleaned & WS_EX_LAYERED.0, 0);
         assert_ne!(cleaned & WS_EX_NOACTIVATE.0, 0);
+    }
+
+    #[test]
+    fn collapsed_mode_is_smart_adaptive() {
+        assert_eq!(collapsed_mode(false, false), NotchMode::Stealth);
+        assert_eq!(collapsed_mode(true, false), NotchMode::Closed);
+        assert_eq!(collapsed_mode(false, true), NotchMode::Closed);
+        assert_eq!(collapsed_mode(true, true), NotchMode::Closed);
+    }
+
+    #[test]
+    fn clamp_notch_size_prevents_degenerate_undershoot() {
+        assert_eq!(clamp_notch_size(128.0, -1.5), (128.0, 2.0));
+        assert_eq!(clamp_notch_size(4.0, 0.0), (16.0, 2.0));
+        assert_eq!(clamp_notch_size(260.0, 28.0), (260.0, 28.0));
+    }
+
+    #[test]
+    fn todo_reorder_target_clamps_to_list_bounds() {
+        assert_eq!(clamp_todo_reorder_target(0, 75.0, 3), Some(2));
+        assert_eq!(clamp_todo_reorder_target(2, -100.0, 3), Some(0));
+        assert_eq!(clamp_todo_reorder_target(1, 26.0, 3), Some(2));
+        assert_eq!(clamp_todo_reorder_target(-1, 26.0, 3), None);
+        assert_eq!(clamp_todo_reorder_target(0, 26.0, 0), None);
+        assert_eq!(clamp_todo_reorder_target(3, 0.0, 3), None);
     }
 }

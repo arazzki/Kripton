@@ -1,0 +1,257 @@
+// Kripton — Stealth filament & Compact/Closed pill view.
+
+import { Theme } from "./theme.slint";
+import { BatteryRing, AudioWave, PlasmaOrb } from "./components.slint";
+
+export component CompactView inherits Rectangle {
+    in property <length> notch-width: 128px;
+    in property <length> notch-height: 4px;
+    in property <float> stealth-alpha: 1.0;
+    in property <float> compact-alpha: 0.0;
+
+    in property <bool> media-playing: false;
+    in property <bool> focus-active: false;
+    in property <string> focus-remaining: "25:00";
+    in property <string> clock-text: "00:00";
+    in property <bool> water-nudge: false;
+
+    // Living mascot properties
+    in property <image> mascot: @image-url("../assets/plasma_core.png");
+    in property <image> corona: @image-url("../assets/plasma_corona.png");
+    in property <image> aura: @image-url("../assets/plasma_aura.png");
+    in property <float> orb-scale: 1.0;
+    in property <float> orb-glow: 0.48;
+    in property <float> aura-scale: 1.0;
+    in property <float> aura-opacity: 0.48;
+    in property <angle> corona-angle: 0deg;
+    in property <length> orb-offset-x: 0px;
+    in property <length> orb-offset-y: 0px;
+
+    // Battery properties
+    in property <bool> battery-present: true;
+    in property <bool> battery-on-ac: true;
+    in property <float> battery-percent: 100.0;
+    in property <bool> battery-charging: false;
+    in property <float> battery-arc-x: 9.0;
+    in property <float> battery-arc-y: 1.25;
+    in property <bool> battery-arc-large: false;
+    in property <bool> battery-arc-visible: false;
+    in property <bool> battery-full: true;
+
+    // Audio spectrum properties
+    in property <float> wave-0: 0.0;
+    in property <float> wave-1: 0.0;
+    in property <float> wave-2: 0.0;
+    in property <float> wave-3: 0.0;
+    in property <float> wave-4: 0.0;
+
+    private property <bool> audio-active: root.media-playing
+        || root.wave-0 > 0.02
+        || root.wave-1 > 0.02
+        || root.wave-2 > 0.02
+        || root.wave-3 > 0.02
+        || root.wave-4 > 0.02;
+    private property <float> breath-norm: clamp((root.orb-glow - 0.34) / 0.28, 0.0, 1.0);
+
+    width: root.notch-width;
+    height: root.notch-height;
+    background: transparent;
+
+    // --- Stealth filament layer --------------------------------------------
+    if root.stealth-alpha > 0.005: Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: transparent;
+        opacity: root.stealth-alpha;
+
+        // Clean centered 28 x 1.5 px frosted white pill line
+        Rectangle {
+            width: 28px;
+            height: 1.5px;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            border-radius: 0.75px;
+            opacity: 0.72 + 0.28 * root.breath-norm;
+            background: root.water-nudge
+                ? @linear-gradient(90deg, transparent 0%, #FBBF24AA 20%, #FDE68AE6 50%, #FBBF24AA 80%, transparent 100%)
+                : @linear-gradient(90deg, transparent 0%, #FFFFFF88 20%, #FFFFFFCC 50%, #FFFFFF88 80%, transparent 100%);
+        }
+    }
+
+    // --- Compact / Closed pill layer ---------------------------------------
+    if root.compact-alpha > 0.005: Rectangle {
+        width: max(260px, root.notch-width);
+        height: max(28px, root.notch-height);
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        background: transparent;
+        opacity: root.compact-alpha;
+
+        // Full-width 3-slot layout guarantees clock never overlaps left/right slots
+        HorizontalLayout {
+            x: 0px;
+            y: 0px;
+            width: parent.width;
+            height: parent.height;
+            padding-left: 8px;
+            padding-right: 10px;
+            spacing: 0px;
+
+            // Left slot: PlasmaOrb + smoothly animating frosted focus countdown pill
+            Rectangle {
+                horizontal-stretch: 1;
+                min-width: 0px;
+                preferred-width: 0px;
+                height: parent.height;
+                background: transparent;
+
+                HorizontalLayout {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width;
+                    height: parent.height;
+                    alignment: start;
+                    spacing: 5px;
+
+                    Rectangle {
+                        width: 18px;
+                        height: parent.height;
+                        background: transparent;
+
+                        PlasmaOrb {
+                            x: 0px;
+                            y: (parent.height - self.height) / 2;
+                            orb-size: 18px;
+                            mascot: root.mascot;
+                            corona: root.corona;
+                            aura: root.aura;
+                            orb-scale: root.orb-scale;
+                            orb-glow: root.orb-glow;
+                            aura-scale: root.aura-scale;
+                            aura-opacity: root.aura-opacity;
+                            corona-angle: root.corona-angle;
+                            orb-offset-x: root.orb-offset-x;
+                            orb-offset-y: root.orb-offset-y;
+                            water-nudge: root.water-nudge;
+                        }
+                    }
+
+                    Rectangle {
+                        width: root.focus-active ? 42px : 0px;
+                        height: parent.height;
+                        background: transparent;
+                        clip: true;
+
+                        animate width {
+                            duration: 180ms;
+                            easing: ease-out;
+                        }
+
+                        Rectangle {
+                            x: 0px;
+                            y: (parent.height - self.height) / 2;
+                            width: parent.width;
+                            height: 17px;
+                            border-radius: 8.5px;
+                            background: Theme.accent-soft;
+                            border-width: root.focus-active ? 1px : 0px;
+                            border-color: Theme.accent-rim;
+                            opacity: root.focus-active ? 1.0 : 0.0;
+                            clip: true;
+
+                            animate opacity {
+                                duration: 180ms;
+                                easing: ease-out;
+                            }
+
+                            Text {
+                                width: parent.width;
+                                height: parent.height;
+                                text: root.focus-remaining;
+                                color: Theme.ink;
+                                font-size: 10px;
+                                font-weight: 600;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Center slot: crisp clock
+            Text {
+                horizontal-stretch: 0;
+                text: root.clock-text;
+                color: Theme.ink;
+                font-size: 13px;
+                font-weight: 600;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+
+            // Right slot: mini BatteryRing + 5-bar AudioWave
+            Rectangle {
+                horizontal-stretch: 1;
+                min-width: 0px;
+                preferred-width: 0px;
+                height: parent.height;
+                background: transparent;
+
+                HorizontalLayout {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width;
+                    height: parent.height;
+                    alignment: end;
+                    spacing: 6px;
+
+                    Rectangle {
+                        width: 13px;
+                        height: parent.height;
+                        background: transparent;
+
+                        BatteryRing {
+                            x: 0px;
+                            y: (parent.height - self.height) / 2;
+                            ring-size: 13px;
+                            percent: root.battery-percent;
+                            charging: root.battery-charging;
+                            present: root.battery-present;
+                            on-ac: root.battery-on-ac;
+                            arc-x: root.battery-arc-x;
+                            arc-y: root.battery-arc-y;
+                            arc-large: root.battery-arc-large;
+                            arc-visible: root.battery-arc-visible;
+                            full: root.battery-full;
+                            show-bolt: true;
+                        }
+                    }
+
+                    Rectangle {
+                        width: compact-wave.width;
+                        height: parent.height;
+                        background: transparent;
+
+                        compact-wave := AudioWave {
+                            x: 0px;
+                            y: (parent.height - self.height) / 2;
+                            wave-0: root.wave-0;
+                            wave-1: root.wave-1;
+                            wave-2: root.wave-2;
+                            wave-3: root.wave-3;
+                            wave-4: root.wave-4;
+                            bar-width: 2px;
+                            bar-gap: 2px;
+                            max-height: 11px;
+                            min-height: 2.5px;
+                            bar-color: root.audio-active ? Theme.accent : Theme.ink-dim;
+                            active: root.audio-active;
+                            inactive-opacity: 0.72;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

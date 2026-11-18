@@ -1,0 +1,890 @@
+import { Theme } from "../theme.slint";
+import {
+    IconMusic,
+    IconPrev,
+    IconPlay,
+    IconPause,
+    IconNext,
+    IconLyrics,
+    IconLink,
+} from "../icons.slint";
+
+component GlassSeekBar inherits Rectangle {
+    in property <bool> seek-enabled: false;
+    in-out property <float> seek-fraction: 0.0;
+    in-out property <bool> seek-dragging: false;
+
+    callback seek-start();
+    callback seek-preview(float);
+    callback seek-commit(float);
+
+    height: 16px;
+    background: transparent;
+
+    private property <float> clamped-fraction: clamp(root.seek-fraction, 0.0, 1.0);
+    private property <bool> active: root.seek-enabled && (seek-touch.has-hover || root.seek-dragging);
+
+    // Track groove
+    Rectangle {
+        x: 0px;
+        y: (parent.height - self.height) / 2;
+        width: parent.width;
+        height: root.active ? 4px : 2.5px;
+        border-radius: self.height / 2;
+        background: #FFFFFF20;
+        clip: true;
+
+        animate height {
+            duration: 160ms;
+            easing: ease-out;
+        }
+
+        Rectangle {
+            x: 0px;
+            y: 0px;
+            width: parent.width * root.clamped-fraction;
+            height: parent.height;
+            border-radius: parent.border-radius;
+            background: root.seek-enabled ? #FFFFFFE6 : Theme.ink-dim;
+        }
+    }
+
+    // Animated thumb dot
+    if root.seek-enabled: Rectangle {
+        x: clamp(parent.width * root.clamped-fraction - 4px, 0px, max(parent.width - 8px, 0px));
+        y: (parent.height - self.height) / 2;
+        width: 8px;
+        height: 8px;
+        border-radius: 4px;
+        background: #FFFFFF;
+        opacity: root.active ? 1.0 : 0.0;
+
+        animate opacity {
+            duration: 140ms;
+            easing: ease-out;
+        }
+    }
+
+    seek-touch := TouchArea {
+        mouse-cursor: root.seek-enabled ? pointer : default;
+        pointer-event(e) => {
+            if (root.seek-enabled) {
+                if (e.kind == PointerEventKind.down) {
+                    root.seek-dragging = true;
+                    root.seek-start();
+                    root.seek-preview(clamp((seek-touch.mouse-x / 1px) / max(seek-touch.width / 1px, 1.0), 0.0, 1.0));
+                }
+                if (e.kind == PointerEventKind.move && root.seek-dragging) {
+                    root.seek-preview(clamp((seek-touch.mouse-x / 1px) / max(seek-touch.width / 1px, 1.0), 0.0, 1.0));
+                }
+                if (e.kind == PointerEventKind.up && root.seek-dragging) {
+                    root.seek-commit(clamp((seek-touch.mouse-x / 1px) / max(seek-touch.width / 1px, 1.0), 0.0, 1.0));
+                    root.seek-dragging = false;
+                }
+                if (e.kind == PointerEventKind.cancel && root.seek-dragging) {
+                    root.seek-dragging = false;
+                }
+            }
+        }
+    }
+}
+
+component AlbumArtFrame inherits Rectangle {
+    in property <length> art-size: 64px;
+    in property <length> art-radius: 12px;
+    in property <bool> has-album-art: false;
+    in property <image> album-art;
+
+    width: root.art-size;
+    height: root.art-size;
+    border-radius: root.art-radius;
+    background: Theme.glass-card;
+    border-width: 1px;
+    border-color: #FFFFFF28;
+    clip: true;
+
+    if root.has-album-art: Image {
+        width: parent.width;
+        height: parent.height;
+        source: root.album-art;
+        image-fit: cover;
+    }
+
+    if !root.has-album-art: IconMusic {
+        width: root.art-size * 0.38;
+        height: root.art-size * 0.38;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        tint: Theme.ink-3;
+    }
+
+    // Subtle top glass edge highlight
+    Rectangle {
+        x: 6px;
+        y: 0px;
+        width: max(0px, parent.width - 12px);
+        height: 1px;
+        background: @linear-gradient(90deg, transparent 0%, #FFFFFF36 50%, transparent 100%);
+    }
+}
+
+component FrostedCircleSkip inherits Rectangle {
+    in property <length> btn-size: 26px;
+    in property <bool> enabled: false;
+    in property <bool> is-next: false;
+    callback clicked();
+
+    width: root.btn-size;
+    height: root.btn-size;
+    background: transparent;
+
+    private property <length> inner-size: (skip-touch.pressed && root.enabled) ? root.btn-size - 2px : root.btn-size;
+
+    Rectangle {
+        width: root.inner-size;
+        height: root.inner-size;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: self.width / 2;
+        background: root.enabled
+            ? (skip-touch.pressed ? Theme.glass-pill-press : (skip-touch.has-hover ? Theme.glass-pill-hover : Theme.glass-pill))
+            : Theme.glass-card;
+        border-width: 1px;
+        border-color: (root.enabled && skip-touch.has-hover) ? Theme.glass-rim : Theme.glass-rim-subtle;
+        opacity: root.enabled ? 1.0 : 0.38;
+
+        animate width, height, x, y, background, border-color, opacity {
+            duration: 160ms;
+            easing: ease-out;
+        }
+
+        if !root.is-next: IconPrev {
+            width: root.btn-size * 0.48;
+            height: root.btn-size * 0.48;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            tint: root.enabled ? (skip-touch.has-hover ? Theme.ink : Theme.ink-2) : Theme.ink-dim;
+        }
+
+        if root.is-next: IconNext {
+            width: root.btn-size * 0.48;
+            height: root.btn-size * 0.48;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            tint: root.enabled ? (skip-touch.has-hover ? Theme.ink : Theme.ink-2) : Theme.ink-dim;
+        }
+    }
+
+    skip-touch := TouchArea {
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => {
+            if (root.enabled) {
+                root.clicked();
+            }
+        }
+    }
+}
+
+component HeroPlayButton inherits Rectangle {
+    in property <length> btn-size: 34px;
+    in property <bool> playing: false;
+    callback clicked();
+
+    width: root.btn-size;
+    height: root.btn-size;
+    background: transparent;
+
+    private property <length> inner-size: play-touch.pressed ? root.btn-size - 3px : root.btn-size;
+
+    Rectangle {
+        width: root.inner-size;
+        height: root.inner-size;
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        border-radius: self.width / 2;
+        background: play-touch.pressed ? #FFFFFF22 : (play-touch.has-hover ? #FFFFFF42 : #FFFFFF2E);
+        border-width: 1px;
+        border-color: play-touch.has-hover ? #FFFFFF75 : #FFFFFF58;
+
+        animate width, height, x, y, background, border-color {
+            duration: 150ms;
+            easing: ease-out;
+        }
+
+        if root.playing: IconPause {
+            width: root.btn-size * 0.40;
+            height: root.btn-size * 0.40;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            tint: #FFFFFF;
+        }
+
+        if !root.playing: IconPlay {
+            width: root.btn-size * 0.40;
+            height: root.btn-size * 0.40;
+            x: (parent.width - self.width) / 2 + 1px;
+            y: (parent.height - self.height) / 2;
+            tint: #FFFFFF;
+        }
+    }
+
+    play-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+component LyricsTogglePill inherits Rectangle {
+    in property <bool> active: false;
+    in property <bool> compact: false;
+    callback clicked();
+
+    height: 22px;
+    width: root.compact ? 54px : 62px;
+    border-radius: 11px;
+    background: root.active
+        ? (lyr-touch.pressed ? #FFFFFF38 : (lyr-touch.has-hover ? #FFFFFF2E : #FFFFFF24))
+        : (lyr-touch.pressed ? Theme.glass-pill-press : (lyr-touch.has-hover ? Theme.glass-pill-hover : Theme.glass-pill));
+    border-width: 1px;
+    border-color: root.active
+        ? #FFFFFF4D
+        : (lyr-touch.has-hover ? Theme.glass-rim : Theme.glass-rim-subtle);
+
+    animate background, border-color {
+        duration: 160ms;
+        easing: ease-out;
+    }
+
+    HorizontalLayout {
+        width: parent.width;
+        height: parent.height;
+        alignment: center;
+        spacing: root.compact ? 3.5px : 4.5px;
+
+        IconLyrics {
+            width: root.compact ? 10.5px : 11.5px;
+            height: root.compact ? 10.5px : 11.5px;
+            y: (parent.height - self.height) / 2;
+            tint: root.active ? #FFFFFF : (lyr-touch.has-hover ? Theme.ink : Theme.ink-2);
+        }
+
+        Text {
+            text: "Lyrics";
+            color: root.active ? #FFFFFF : (lyr-touch.has-hover ? Theme.ink : Theme.ink-2);
+            font-size: root.compact ? 9.5px : 10px;
+            font-weight: 600;
+            vertical-alignment: center;
+
+            animate color {
+                duration: 160ms;
+                easing: ease-out;
+            }
+        }
+    }
+
+    lyr-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked();
+        }
+    }
+}
+
+export component MusicPage inherits Rectangle {
+    in property <bool> media-available: false;
+    in property <bool> media-playing: false;
+    in property <string> track-title: "Nothing playing";
+    in property <string> track-subtitle: "Start a track in any app";
+    in property <string> media-source: "";
+    in property <string> elapsed-text: "00:00";
+    in property <string> remaining-text: "-00:00";
+    in property <bool> has-album-art: false;
+    in property <image> album-art;
+    in property <bool> seek-enabled: false;
+    in property <bool> can-skip-previous: false;
+    in property <bool> can-skip-next: false;
+    in-out property <float> seek-fraction: 0.0;
+    in-out property <bool> seek-dragging: false;
+    in property <bool> lyrics-enabled: false;
+    in property <bool> lyrics-available: false;
+    in property <bool> lyrics-loading: false;
+    in property <string> lyrics-line-prev: "";
+    in property <string> lyrics-line-curr: "Play a track to see lyrics";
+    in property <string> lyrics-line-next: "";
+    in property <int> lyrics-revision: 0;
+    in property <color> lyrics-glow-color: #1E3A8A;
+    in property <float> wave-0: 0.0;
+    in property <float> wave-1: 0.0;
+    in property <float> wave-2: 0.0;
+    in property <float> wave-3: 0.0;
+    in property <float> wave-4: 0.0;
+
+    callback media-play-pause();
+    callback media-previous();
+    callback media-next();
+    callback media-open-source();
+    callback media-seek-start();
+    callback media-seek-preview(float);
+    callback media-seek-commit(float);
+    callback lyrics-toggle();
+
+    preferred-width: 452px;
+    preferred-height: 104px;
+    background: transparent;
+
+    // One-frame snap + smooth vertical glide when lyrics-revision increments
+    private property <bool> lyrics-entering: false;
+
+    lyrics-reveal-timer := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            self.running = false;
+            root.lyrics-entering = false;
+        }
+    }
+
+    changed lyrics-revision => {
+        root.lyrics-entering = true;
+        lyrics-reveal-timer.start();
+        lyrics-reveal-timer.restart();
+    }
+
+    // --- Standard Player (!lyrics-enabled) ---------------------------------
+    if !root.lyrics-enabled: HorizontalLayout {
+        width: parent.width;
+        height: parent.height;
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 12px;
+
+        // Left: 64x64 squircle album art (no radial glow halo)
+        Rectangle {
+            width: 64px;
+            background: transparent;
+
+            AlbumArtFrame {
+                x: 0px;
+                y: (parent.height - self.height) / 2;
+                art-size: 64px;
+                art-radius: 12px;
+                has-album-art: root.has-album-art;
+                album-art: root.album-art;
+            }
+        }
+
+        // Right: title + source pill, interactive seek bar, transport row
+        VerticalLayout {
+            horizontal-stretch: 1;
+            alignment: space-between;
+            spacing: 2px;
+
+            // Top right: Title, subtitle, and clickable frosted white Source App Pill
+            HorizontalLayout {
+                height: 32px;
+                spacing: 8px;
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    alignment: center;
+                    spacing: 0px;
+
+                    Text {
+                        min-width: 0px;
+                        text: root.track-title;
+                        color: #FFFFFF;
+                        font-size: 13.5px;
+                        font-weight: 700;
+                        overflow: TextOverflow.elide;
+                    }
+
+                    Text {
+                        min-width: 0px;
+                        text: root.track-subtitle;
+                        color: #FFFFFFA6;
+                        font-size: 10.5px;
+                        font-weight: 400;
+                        overflow: TextOverflow.elide;
+                    }
+                }
+
+                // Clickable frosted white Source App Pill
+                Rectangle {
+                    y: (parent.height - self.height) / 2;
+                    height: 20px;
+                    max-width: 112px;
+                    border-radius: 10px;
+                    background: root.media-available
+                        ? (source-touch.pressed ? Theme.glass-pill-press : (source-touch.has-hover ? Theme.glass-pill-hover : Theme.glass-pill))
+                        : Theme.glass-card;
+                    border-width: 1px;
+                    border-color: (root.media-available && source-touch.has-hover) ? Theme.glass-rim : Theme.glass-rim-subtle;
+                    opacity: root.media-available ? 1.0 : 0.0;
+
+                    animate background, border-color, opacity {
+                        duration: 160ms;
+                        easing: ease-out;
+                    }
+
+                    HorizontalLayout {
+                        padding-left: 7px;
+                        padding-right: 7px;
+                        spacing: 4px;
+                        alignment: center;
+
+                        if root.media-source != "": Text {
+                            min-width: 0px;
+                            text: root.media-source;
+                            color: source-touch.has-hover ? Theme.ink : Theme.ink-2;
+                            font-size: 9.5px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                            overflow: TextOverflow.elide;
+
+                            animate color {
+                                duration: 160ms;
+                                easing: ease-out;
+                            }
+                        }
+
+                        IconLink {
+                            width: 10px;
+                            height: 10px;
+                            y: (parent.height - self.height) / 2;
+                            tint: source-touch.has-hover ? #FFFFFF : Theme.ink-2;
+                        }
+                    }
+
+                    source-touch := TouchArea {
+                        enabled: root.media-available;
+                        mouse-cursor: root.media-available ? pointer : default;
+                        clicked => {
+                            if (root.media-available) {
+                                root.media-open-source();
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Interactive Seek Bar row (16px hit height)
+            HorizontalLayout {
+                height: 16px;
+                spacing: 6px;
+
+                Text {
+                    min-width: 30px;
+                    text: root.elapsed-text;
+                    color: Theme.ink-3;
+                    font-size: 9.5px;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                }
+
+                GlassSeekBar {
+                    horizontal-stretch: 1;
+                    seek-enabled: root.seek-enabled;
+                    seek-fraction <=> root.seek-fraction;
+                    seek-dragging <=> root.seek-dragging;
+                    seek-start => {
+                        root.media-seek-start();
+                    }
+                    seek-preview(f) => {
+                        root.media-seek-preview(f);
+                    }
+                    seek-commit(f) => {
+                        root.media-seek-commit(f);
+                    }
+                }
+
+                Text {
+                    min-width: 34px;
+                    text: root.remaining-text;
+                    color: Theme.ink-3;
+                    font-size: 9.5px;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                }
+            }
+
+            // Transport row: subtle white wave on left, Prev/Play/Next centered, Lyrics pill on right
+            HorizontalLayout {
+                height: 34px;
+                spacing: 0px;
+
+                // Left balance slot matching right Lyrics pill width (62px)
+                Rectangle {
+                    width: 62px;
+                    height: parent.height;
+                    background: transparent;
+
+                    HorizontalLayout {
+                        x: 2px;
+                        y: (parent.height - self.height) / 2;
+                        height: 12px;
+                        spacing: 2px;
+                        alignment: start;
+                        opacity: root.media-playing ? 0.90 : (root.media-available ? 0.30 : 0.14);
+
+                        animate opacity {
+                            duration: 220ms;
+                            easing: ease-out;
+                        }
+
+                        for level in [root.wave-0, root.wave-1, root.wave-2, root.wave-3, root.wave-4]: Rectangle {
+                            width: 2px;
+                            height: 12px;
+                            background: transparent;
+
+                            Rectangle {
+                                width: 2px;
+                                height: 2.5px + clamp(level, 0.0, 1.0) * 9.5px;
+                                y: (parent.height - self.height) / 2;
+                                border-radius: 1px;
+                                background: root.media-playing ? #FFFFFF : Theme.ink-3;
+                            }
+                        }
+                    }
+                }
+
+                // Centered transport buttons
+                HorizontalLayout {
+                    horizontal-stretch: 1;
+                    height: parent.height;
+                    spacing: 10px;
+                    alignment: center;
+
+                    FrostedCircleSkip {
+                        y: (parent.height - self.height) / 2;
+                        btn-size: 26px;
+                        enabled: root.can-skip-previous;
+                        is-next: false;
+                        clicked => {
+                            root.media-previous();
+                        }
+                    }
+
+                    HeroPlayButton {
+                        y: (parent.height - self.height) / 2;
+                        btn-size: 34px;
+                        playing: root.media-playing;
+                        clicked => {
+                            root.media-play-pause();
+                        }
+                    }
+
+                    FrostedCircleSkip {
+                        y: (parent.height - self.height) / 2;
+                        btn-size: 26px;
+                        enabled: root.can-skip-next;
+                        is-next: true;
+                        clicked => {
+                            root.media-next();
+                        }
+                    }
+                }
+
+                // Right-aligned frosted white Lyrics pill
+                Rectangle {
+                    width: 62px;
+                    height: parent.height;
+                    background: transparent;
+
+                    LyricsTogglePill {
+                        x: parent.width - self.width;
+                        y: (parent.height - self.height) / 2;
+                        active: root.lyrics-enabled;
+                        compact: false;
+                        clicked => {
+                            root.lyrics-toggle();
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Lyrics Split View (lyrics-enabled) ---------------------------------
+    if root.lyrics-enabled: HorizontalLayout {
+        width: parent.width;
+        height: parent.height;
+        padding-left: 10px;
+        padding-right: 10px;
+        padding-top: 6px;
+        padding-bottom: 6px;
+        spacing: 10px;
+
+        // Left column (186px): 42x42 art, title/subtitle, 16px seek bar, 28px transport row
+        VerticalLayout {
+            width: 186px;
+            alignment: space-between;
+            spacing: 2px;
+
+            HorizontalLayout {
+                height: 42px;
+                spacing: 8px;
+
+                AlbumArtFrame {
+                    y: (parent.height - self.height) / 2;
+                    art-size: 42px;
+                    art-radius: 10px;
+                    has-album-art: root.has-album-art;
+                    album-art: root.album-art;
+                }
+
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    min-width: 0px;
+                    alignment: center;
+                    spacing: 0px;
+
+                    Text {
+                        min-width: 0px;
+                        text: root.track-title;
+                        color: #FFFFFF;
+                        font-size: 12px;
+                        font-weight: 700;
+                        overflow: TextOverflow.elide;
+                    }
+
+                    Text {
+                        min-width: 0px;
+                        text: root.track-subtitle;
+                        color: #FFFFFFA6;
+                        font-size: 10px;
+                        overflow: TextOverflow.elide;
+                    }
+                }
+            }
+
+            // Full interactive seek bar
+            HorizontalLayout {
+                height: 16px;
+                spacing: 5px;
+
+                Text {
+                    text: root.elapsed-text;
+                    color: Theme.ink-3;
+                    font-size: 9.5px;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                }
+
+                GlassSeekBar {
+                    horizontal-stretch: 1;
+                    seek-enabled: root.seek-enabled;
+                    seek-fraction <=> root.seek-fraction;
+                    seek-dragging <=> root.seek-dragging;
+                    seek-start => {
+                        root.media-seek-start();
+                    }
+                    seek-preview(f) => {
+                        root.media-seek-preview(f);
+                    }
+                    seek-commit(f) => {
+                        root.media-seek-commit(f);
+                    }
+                }
+
+                Text {
+                    text: root.remaining-text;
+                    color: Theme.ink-3;
+                    font-size: 9.5px;
+                    font-weight: 500;
+                    vertical-alignment: center;
+                    horizontal-alignment: right;
+                }
+            }
+
+            // Transport controls + compact Lyrics pill (54 + 84 = 138px <= 186px)
+            HorizontalLayout {
+                height: 28px;
+                alignment: space-between;
+
+                LyricsTogglePill {
+                    y: (parent.height - self.height) / 2;
+                    active: root.lyrics-enabled;
+                    compact: true;
+                    clicked => {
+                        root.lyrics-toggle();
+                    }
+                }
+
+                HorizontalLayout {
+                    spacing: 6px;
+                    alignment: center;
+
+                    FrostedCircleSkip {
+                        y: (parent.height - self.height) / 2;
+                        btn-size: 22px;
+                        enabled: root.can-skip-previous;
+                        is-next: false;
+                        clicked => {
+                            root.media-previous();
+                        }
+                    }
+
+                    HeroPlayButton {
+                        y: (parent.height - self.height) / 2;
+                        btn-size: 28px;
+                        playing: root.media-playing;
+                        clicked => {
+                            root.media-play-pause();
+                        }
+                    }
+
+                    FrostedCircleSkip {
+                        y: (parent.height - self.height) / 2;
+                        btn-size: 22px;
+                        enabled: root.can-skip-next;
+                        is-next: true;
+                        clicked => {
+                            root.media-next();
+                        }
+                    }
+                }
+            }
+        }
+
+        // Vertical 1px white glass divider
+        Rectangle {
+            width: 1px;
+            background: #FFFFFF1A;
+        }
+
+        // Right column: Monochrome white frosted Karaoke viewport
+        Rectangle {
+            horizontal-stretch: 1;
+            clip: true;
+            background: transparent;
+
+            // Animated vertical glide/fade container driven by lyrics-revision
+            Rectangle {
+                x: 0px;
+                y: root.lyrics-entering ? 6px : 0px;
+                width: parent.width;
+                height: parent.height;
+                opacity: root.lyrics-entering ? 0.15 : 1.0;
+                background: transparent;
+
+                animate opacity {
+                    duration: root.lyrics-entering ? 0ms : 220ms;
+                    easing: ease-out;
+                }
+                animate y {
+                    duration: root.lyrics-entering ? 0ms : 220ms;
+                    easing: ease-out;
+                }
+
+                if root.lyrics-available: VerticalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    alignment: center;
+                    spacing: 4px;
+
+                    Text {
+                        min-width: 0px;
+                        text: root.lyrics-line-prev;
+                        color: #FFFFFF60;
+                        font-size: 10px;
+                        font-weight: 500;
+                        overflow: TextOverflow.elide;
+                        horizontal-alignment: left;
+                    }
+
+                    // Clean frosted white glass active karaoke capsule
+                    Rectangle {
+                        height: 28px;
+                        border-radius: 9px;
+                        background: #FFFFFF1A;
+                        border-width: 1px;
+                        border-color: #FFFFFF38;
+
+                        HorizontalLayout {
+                            padding-left: 10px;
+                            padding-right: 10px;
+                            alignment: start;
+
+                            Text {
+                                horizontal-stretch: 1;
+                                min-width: 0px;
+                                text: root.lyrics-line-curr;
+                                color: #FFFFFF;
+                                font-size: 12px;
+                                font-weight: 700;
+                                overflow: TextOverflow.elide;
+                                horizontal-alignment: left;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    Text {
+                        min-width: 0px;
+                        text: root.lyrics-line-next;
+                        color: #FFFFFF60;
+                        font-size: 10px;
+                        font-weight: 500;
+                        overflow: TextOverflow.elide;
+                        horizontal-alignment: left;
+                    }
+                }
+
+                if !root.lyrics-available: VerticalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    alignment: center;
+                    spacing: 6px;
+
+                    Text {
+                        text: root.lyrics-line-curr;
+                        color: root.lyrics-loading ? Theme.ink-2 : Theme.ink-3;
+                        font-size: 11.5px;
+                        font-weight: 500;
+                        overflow: TextOverflow.elide;
+                        horizontal-alignment: center;
+                    }
+
+                    if root.lyrics-loading: HorizontalLayout {
+                        height: 6px;
+                        spacing: 5px;
+                        alignment: center;
+
+                        for dot-idx in 3: Rectangle {
+                            width: 4.5px;
+                            height: 4.5px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 2.25px;
+                            background: #FFFFFF;
+                            opacity: 0.30 + 0.70 * (0.5 + 0.5 * Math.sin(((animation-tick() / 1s) * 320.0 - dot-idx * 70.0) * 1deg));
+                        }
+                    }
+                }
+            }
+
+            // Subtle white pulsing dots in top-right if refreshing while lines exist
+            if root.lyrics-available && root.lyrics-loading: HorizontalLayout {
+                x: parent.width - 24px;
+                y: 2px;
+                width: 22px;
+                height: 6px;
+                spacing: 3px;
+                alignment: center;
+
+                for dot-idx in 3: Rectangle {
+                    width: 3px;
+                    height: 3px;
+                    border-radius: 1.5px;
+                    background: #FFFFFF;
+                    opacity: 0.30 + 0.70 * (0.5 + 0.5 * Math.sin(((animation-tick() / 1s) * 320.0 - dot-idx * 70.0) * 1deg));
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,397 @@
+import { Theme } from "../theme.slint";
+import { IconWater } from "../icons.slint";
+
+component WaterQuickButton inherits Rectangle {
+    in property <int> amount: 250;
+    callback clicked(int);
+
+    horizontal-stretch: 1;
+    height: 32px;
+    background: transparent;
+
+    private property <length> inset: add-touch.pressed ? 1px : 0px;
+
+    Rectangle {
+        x: root.inset;
+        y: root.inset;
+        width: parent.width - root.inset * 2;
+        height: parent.height - root.inset * 2;
+        border-radius: 9px;
+        background: add-touch.pressed
+            ? Theme.glass-pill-press
+            : (add-touch.has-hover ? Theme.glass-pill-hover : Theme.glass-pill);
+        border-width: 1px;
+        border-color: add-touch.pressed
+            ? #FFFFFF58
+            : (add-touch.has-hover ? Theme.glass-rim : Theme.glass-rim-subtle);
+
+        animate x, y, width, height, background, border-color {
+            duration: 160ms;
+            easing: ease-out;
+        }
+
+        HorizontalLayout {
+            width: parent.width;
+            height: parent.height;
+            alignment: center;
+            spacing: 4px;
+
+            IconWater {
+                width: 11px;
+                height: 11px;
+                y: (parent.height - self.height) / 2;
+                tint: add-touch.has-hover ? #FFFFFF : Theme.ink-2;
+            }
+
+            Text {
+                text: "+\{root.amount} ml";
+                color: add-touch.has-hover ? Theme.ink : Theme.ink-2;
+                font-size: 11px;
+                font-weight: 600;
+                vertical-alignment: center;
+
+                animate color {
+                    duration: 160ms;
+                    easing: ease-out;
+                }
+            }
+        }
+    }
+
+    add-touch := TouchArea {
+        mouse-cursor: pointer;
+        clicked => {
+            root.clicked(root.amount);
+        }
+    }
+}
+
+export component WaterPage inherits Rectangle {
+    in property <int> water-current: 0;
+    in property <int> water-goal: 2000;
+    in property <float> water-progress: 0.0;
+    in property <float> water-phase: 0.0;
+    in property <string> water-summary: "0 / 2,000 ml";
+    in property <string> water-percent: "0%";
+    in property <bool> water-can-undo: false;
+    in property <bool> water-nudge: false;
+
+    callback water-add(int);
+    callback water-undo();
+
+    preferred-width: 452px;
+    preferred-height: 104px;
+    background: transparent;
+
+    private property <[int]> water-presets: [150, 250, 500];
+    private property <float> clamped-progress: clamp(root.water-progress, 0.0, 1.0);
+
+    HorizontalLayout {
+        width: parent.width;
+        height: parent.height;
+        padding-left: 12px;
+        padding-right: 12px;
+        padding-top: 4px;
+        padding-bottom: 4px;
+        spacing: 14px;
+
+        // Left: 66x94 frosted glass vessel with crystalline frosted white water
+        Rectangle {
+            width: 70px;
+            background: transparent;
+
+            vessel := Rectangle {
+                width: 66px;
+                height: 94px;
+                x: (parent.width - self.width) / 2;
+                y: (parent.height - self.height) / 2;
+                border-radius: 13px;
+                background: #FFFFFF0A;
+                border-width: 1px;
+                border-color: #FFFFFF28;
+                clip: true;
+
+                // Animated rising crystalline white water body
+                water-body := Rectangle {
+                    x: 0px;
+                    width: parent.width;
+                    height: root.clamped-progress * parent.height;
+                    y: parent.height - self.height;
+                    background: @linear-gradient(180deg, #FFFFFF52 0%, #FFFFFF26 100%);
+
+                    animate height {
+                        duration: 420ms;
+                        easing: ease-out;
+                    }
+                }
+
+                // Back pure-white sine crest (seam-free above water-body.y)
+                Path {
+                    x: -Math.mod(root.water-phase + 0.45, 1.0) * 66px;
+                    y: water-body.y - 8px;
+                    width: 132px;
+                    height: 8px;
+                    viewbox-x: 0;
+                    viewbox-y: 0;
+                    viewbox-width: 132;
+                    viewbox-height: 8;
+                    fill: #FFFFFF2A;
+                    opacity: water-body.height > 1px ? 1.0 : 0.0;
+
+                    animate opacity {
+                        duration: 200ms;
+                        easing: ease-out;
+                    }
+
+                    MoveTo { x: 0; y: 4; }
+                    CubicTo { control-1-x: 11; control-1-y: 0.5; control-2-x: 22; control-2-y: 0.5; x: 33; y: 4; }
+                    CubicTo { control-1-x: 44; control-1-y: 7.5; control-2-x: 55; control-2-y: 7.5; x: 66; y: 4; }
+                    CubicTo { control-1-x: 77; control-1-y: 0.5; control-2-x: 88; control-2-y: 0.5; x: 99; y: 4; }
+                    CubicTo { control-1-x: 110; control-1-y: 7.5; control-2-x: 121; control-2-y: 7.5; x: 132; y: 4; }
+                    LineTo { x: 132; y: 8; }
+                    LineTo { x: 0; y: 8; }
+                    Close {}
+                }
+
+                // Primary pure-white sine crest right at water-body.y - 6px
+                Path {
+                    x: -Math.mod(root.water-phase, 1.0) * 66px;
+                    y: water-body.y - 6px;
+                    width: 132px;
+                    height: 6px;
+                    viewbox-x: 0;
+                    viewbox-y: 0;
+                    viewbox-width: 132;
+                    viewbox-height: 6;
+                    fill: #FFFFFF4A;
+                    opacity: water-body.height > 1px ? 1.0 : 0.0;
+
+                    animate opacity {
+                        duration: 200ms;
+                        easing: ease-out;
+                    }
+
+                    MoveTo { x: 0; y: 3; }
+                    CubicTo { control-1-x: 11; control-1-y: 0.4; control-2-x: 22; control-2-y: 0.4; x: 33; y: 3; }
+                    CubicTo { control-1-x: 44; control-1-y: 5.6; control-2-x: 55; control-2-y: 5.6; x: 66; y: 3; }
+                    CubicTo { control-1-x: 77; control-1-y: 0.4; control-2-x: 88; control-2-y: 0.4; x: 99; y: 3; }
+                    CubicTo { control-1-x: 110; control-1-y: 5.6; control-2-x: 121; control-2-y: 5.6; x: 132; y: 3; }
+                    LineTo { x: 132; y: 6; }
+                    LineTo { x: 0; y: 6; }
+                    Close {}
+                }
+
+                // Left specular glass highlight strip
+                Rectangle {
+                    x: 4px;
+                    y: 8px;
+                    width: 2.5px;
+                    height: parent.height - 16px;
+                    border-radius: 1.25px;
+                    background: @linear-gradient(180deg, #FFFFFF44 0%, #FFFFFF14 58%, #FFFFFF04 100%);
+                }
+
+                // Top specular rim accent
+                Rectangle {
+                    x: 10px;
+                    y: 0px;
+                    width: parent.width - 20px;
+                    height: 1px;
+                    background: @linear-gradient(90deg, transparent 0%, #FFFFFF36 50%, transparent 100%);
+                }
+
+                // Centered dark-frosted 44x20 percent pill
+                Rectangle {
+                    width: 44px;
+                    height: 20px;
+                    x: (parent.width - self.width) / 2;
+                    y: (parent.height - self.height) / 2;
+                    border-radius: 10px;
+                    background: #0A0A0CB0;
+                    border-width: 1px;
+                    border-color: #FFFFFF33;
+
+                    Text {
+                        width: parent.width;
+                        height: parent.height;
+                        text: root.water-percent;
+                        color: #FFFFFF;
+                        font-size: 10.5px;
+                        font-weight: 700;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+
+        // Right: summary + nudge + undo, linear goal bar, 3 quick-add buttons
+        Rectangle {
+            horizontal-stretch: 1;
+            background: transparent;
+
+            VerticalLayout {
+                x: 0px;
+                y: (parent.height - self.height) / 2;
+                width: parent.width;
+                height: 92px;
+                alignment: space-between;
+                spacing: 6px;
+
+                // Top row (22px)
+                HorizontalLayout {
+                    height: 22px;
+                    spacing: 8px;
+
+                    Text {
+                        min-width: 0px;
+                        text: root.water-summary;
+                        color: #FFFFFF;
+                        font-size: 16px;
+                        font-weight: 600;
+                        vertical-alignment: center;
+                        overflow: TextOverflow.elide;
+                    }
+
+                    // Subtle amber "Sip?" dot + label when water-nudge is active
+                    if root.water-nudge: HorizontalLayout {
+                        y: (parent.height - self.height) / 2;
+                        spacing: 4px;
+                        alignment: center;
+
+                        Rectangle {
+                            width: 5px;
+                            height: 5px;
+                            y: (parent.height - self.height) / 2;
+                            border-radius: 2.5px;
+                            background: Theme.warn;
+                            opacity: 0.45 + 0.55 * (0.5 + 0.5 * Math.sin(((animation-tick() / 1s) * 260.0) * 1deg));
+                        }
+
+                        Text {
+                            text: "Sip?";
+                            color: Theme.warn;
+                            font-size: 10px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        horizontal-stretch: 1;
+                        background: transparent;
+                    }
+
+                    // Undo white glass pill (44x20)
+                    Rectangle {
+                        y: (parent.height - self.height) / 2;
+                        width: 44px;
+                        height: 20px;
+                        border-radius: 10px;
+                        background: root.water-can-undo
+                            ? (undo-touch.pressed ? Theme.glass-pill-press : (undo-touch.has-hover ? Theme.glass-pill-hover : Theme.glass-pill))
+                            : Theme.glass-card;
+                        border-width: 1px;
+                        border-color: (root.water-can-undo && undo-touch.has-hover) ? Theme.glass-rim : Theme.glass-rim-subtle;
+                        opacity: root.water-can-undo ? 1.0 : 0.40;
+
+                        animate background, border-color, opacity {
+                            duration: 160ms;
+                            easing: ease-out;
+                        }
+
+                        Text {
+                            width: parent.width;
+                            height: parent.height;
+                            text: "Undo";
+                            color: (root.water-can-undo && undo-touch.has-hover) ? Theme.ink : Theme.ink-2;
+                            font-size: 10px;
+                            font-weight: 600;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+
+                            animate color {
+                                duration: 160ms;
+                                easing: ease-out;
+                            }
+                        }
+
+                        undo-touch := TouchArea {
+                            mouse-cursor: root.water-can-undo ? pointer : default;
+                            clicked => {
+                                if (root.water-can-undo) {
+                                    root.water-undo();
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Goal bar (18px)
+                VerticalLayout {
+                    height: 18px;
+                    spacing: 1px;
+
+                    HorizontalLayout {
+                        height: 12px;
+
+                        Text {
+                            text: "Daily hydration";
+                            color: Theme.ink-3;
+                            font-size: 9.5px;
+                            font-weight: 500;
+                            vertical-alignment: center;
+                        }
+
+                        Rectangle {
+                            horizontal-stretch: 1;
+                            background: transparent;
+                        }
+
+                        Text {
+                            text: "\{root.water-current} / \{root.water-goal} ml";
+                            color: root.clamped-progress >= 1.0 ? #FFFFFF : Theme.ink-2;
+                            font-size: 9.5px;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Rectangle {
+                        height: 5px;
+                        border-radius: 2.5px;
+                        background: #FFFFFF1A;
+                        clip: true;
+
+                        Rectangle {
+                            x: 0px;
+                            y: 0px;
+                            width: parent.width * root.clamped-progress;
+                            height: parent.height;
+                            border-radius: 2.5px;
+                            background: #FFFFFFE0;
+
+                            animate width {
+                                duration: 380ms;
+                                easing: ease-out;
+                            }
+                        }
+                    }
+                }
+
+                // 3 tactile quick-add white frosted glass buttons (32px)
+                HorizontalLayout {
+                    height: 32px;
+                    spacing: 6px;
+
+                    for amount in root.water-presets: WaterQuickButton {
+                        amount: amount;
+                        clicked(ml) => {
+                            root.water-add(ml);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
