@@ -1,53 +1,116 @@
+<div align="center">
+
+<img src="assets/icon.png" alt="Kripton Logo" width="108" height="108" />
+
 # Kripton
 
-**Living notch untuk Windows.** Terinspirasi oleh **Nusa**, Kripton adalah aplikasi desktop native yang menempel di tepi atas layar (tengah) dan berubah bentuk dengan fisika pegas: garis *stealth* yang bernapas saat idle, kapsul ringkas saat media/fokus aktif, hingga panel kaca transparan untuk kontrol musik, lirik sinkron, timer fokus, pelacak minum, rak file, to-do, serta HUD headphone dan baterai.
+**Native Windows living notch — built with 100% Rust & Slint.**
 
-Dibangun **100% dengan Rust + Slint (FemtoVG)** — tanpa Electron, WebView2, atau proses tambahan.
+[![Platform](https://img.shields.io/badge/Windows-10%20%2F%2011-18181B?style=flat-square&logo=windows&logoColor=white)](#kebutuhan--build-dari-source)
+[![Stack](https://img.shields.io/badge/Rust_+_Slint-FemtoVG-18181B?style=flat-square&logo=rust&logoColor=white)](#arsitektur)
+[![Version](https://img.shields.io/badge/version-1.0.0-27272A?style=flat-square)](#instalasi--build)
+[![License](https://img.shields.io/badge/license-MIT-27272A?style=flat-square)](LICENSE)
 
-![Kripton — concept art](assets/plasma_core_concept.png)
+[Fitur Utama](#fitur-utama) · [Tampilan & Dimensi](#tampilan--dimensi) · [Kontrol](#kontrol) · [Instalasi & Build](#instalasi--build) · [Arsitektur](#arsitektur)
+
+</div>
 
 ---
 
-## Tampilan & Dimensi
-
-Kripton memakai gaya **Monochrome White Transparent Glassmorphism** di atas permukaan *smoked glass* netral (`#131316C4` → `#09090BD6`, stealth `#0D0D10BA`) dengan komponen putih *frosted glass*, *perimeter rim* 1 px, dan kanvas transparan `540 × 204 px` (lihat [`DIMENSIONS.md`](DIMENSIONS.md)).
-
-| Mode | Ukuran Visual | Perilaku |
-| :--- | :---: | :--- |
-| **Stealth** | `128 × 4 px` | Garis mikro di tepi atas saat idle tanpa media maupun timer fokus aktif (*wake strip* `148 × 6 px`). |
-| **Compact / Closed** | `260 × 28 px` | Aktif otomatis (*Smart Adaptive*) saat audio/media berjalan atau timer fokus aktif (`PlasmaOrb`, jam, timer fokus, baterai, 5-bar wave). Melebar ke `276 × 30 px` saat hover. |
-| **Expanded / Lyrics** | `476 × 172 px` | Terbuka saat diklik: header ringkas, area konten `452 × 104 px` untuk 5 halaman, dan *expanding tab dock* di bawah. |
-| **Hardware HUD** | `268 × 54 px` / `256 × 50 px` | Notifikasi transien 3 detik saat headphone tersambung/putus atau status charger/baterai berubah. |
+Terinspirasi oleh **Nusa**, **Kripton** menyulap area tengah atas layar Windows menjadi *living notch* interaktif berbasis fisika pegas dan *monochrome white transparent glassmorphism* — tanpa Electron, WebView2, atau proses latar belakang berat.
 
 ---
 
 ## Fitur Utama
 
-- **Living Plasma Core (`PlasmaOrb`)**: Maskot tiga lapis (*core*, *corona*, *aura*) yang bernapas pada `0.25 Hz`, tertarik ke kursor (*ferrofluid pull*), dan berubah hangat saat pengingat minum aktif.
-- **Music & Live Lyrics**: Kontrol playback via WinRT SMTC (*play/pause*, *prev/next*, *seek bar*, buka aplikasi sumber via AUMID), visualizer 5-band real-time via WASAPI loopback FFT, dan split-view lirik tersinkron dari LRCLIB dengan cache lokal.
-- **Focus Timer**: Pomodoro 25/5 dengan preset `15/25/45/60` menit, penyesuaian cepat `-5`/`+5` menit, cincin progres 60 fps, chime *in-memory*, dan penghitung sesi harian.
-- **Water Tracker**: Pelacakan asupan harian (default `2.000 ml`, dapat diubah lewat tray), tombol cepat `+150` / `+250` / `+500 ml`, `Undo`, animasi gelombang ganda, dan pengingat 90 menit.
-- **File & Folder Shelf**: *OLE drag-and-drop* langsung dari Explorer, carousel hingga 5 kartu dengan thumbnail gambar, hapus per item (`×`), `Clear`, dan buka via `ShellExecute`.
-- **Quick To-do**: Input inline, checklist dengan animasi *strikethrough*, *drag-to-reorder*, `Clear done`, dan persistensi otomatis.
-- **Hardware HUD & System Tray**: Deteksi endpoint headphone (`IMMNotificationClient`), status baterai/AC (`GetSystemPowerStatus`), serta menu tray (`Show/Hide`, `Start with Windows`, `Lyrics`, `Water goal`, `Quit`).
+| Modul | Kemampuan |
+| :--- | :--- |
+| **Living Plasma Core** | Maskot tiga lapis (*core*, *corona*, *aura*) yang bernapas pada `0.25 Hz`, tertarik oleh posisi kursor (*ferrofluid pull*), dan berubah hangat saat pengingat minum aktif. |
+| **Music & Live Lyrics** | Kontrol playback via WinRT SMTC (*play/pause*, *prev/next*, *seek bar*, buka app sumber via AUMID), visualizer 5-band real-time via WASAPI loopback FFT, dan lirik tersinkron split-view dari LRCLIB dengan cache lokal. |
+| **Focus Timer** | Pomodoro 25/5 dengan preset `15/25/45/60` menit, penyesuaian cepat `-5`/`+5` menit, cincin progres 60 fps, *chime* in-memory, dan penghitung sesi harian. |
+| **Water Tracker** | Target hidrasi harian (default `2.000 ml`, dapat diubah lewat tray), tombol cepat `+150` / `+250` / `+500 ml`, `Undo`, gelombang cairan ganda, dan pengingat 90 menit. |
+| **File & Folder Shelf** | *OLE drag-and-drop* langsung dari Explorer, carousel hingga 5 item dengan thumbnail gambar, hapus per item (`×`), `Clear`, dan buka via `ShellExecute`. |
+| **Quick To-do** | Input inline, checklist dengan animasi *strikethrough*, *drag-to-reorder* langsung, `Clear done`, dan penyimpanan otomatis. |
+| **Hardware HUD & Tray** | Pop-up otomatis 3 detik saat headphone tersambung/putus (`IMMNotificationClient`) atau status baterai/AC berubah (`GetSystemPowerStatus`), plus ikon System Tray lengkap. |
 
 ---
 
-## Kontrol Singkat
+## Tampilan & Dimensi
+
+Kripton memakai tampilan **Monochrome White Transparent Glassmorphism**: bodi kaca gelap transparan netral dengan tombol, tab aktif, *progress bar*, dan *audio wave* bernuansa putih *frosted glass*. Seluruh area di luar kapsul *notch* bersifat tembus pandang dan tembus klik (*click-through*), sehingga tab browser di kiri dan kanan tetap bisa diklik normal.
+
+**Alur transisi (*Smart Adaptive*):**
+- **Idle** (tanpa musik & timer) → menyusut menjadi garis tipis **Stealth** (`128 × 4 px`).
+- **Musik / Timer aktif** → otomatis tampil sebagai **Compact Pill** (`260 × 28 px`).
+- **Hover kursor** → bangun/melebar ke **Compact Hover** (`276 × 30 px`).
+- **Klik** → terbuka menjadi panel **Expanded** (`476 × 172 px`).
+
+| Mode | Ukuran Notch | Area Sensor | Kapan Muncul & Isi Tampilan |
+| :--- | :---: | :---: | :--- |
+| **Stealth** | `128 × 4 px` | `148 × 6 px` | Saat idle tanpa media maupun timer — garis filamen tipis di tepi atas layar. |
+| **Compact (Active)** | `260 × 28 px` | `284 × 40 px` | Otomatis muncul saat audio/media berjalan atau timer fokus aktif (`PlasmaOrb`, sisa timer, jam, baterai, 5-bar wave). |
+| **Compact (Hover)** | `276 × 30 px` | `300 × 42 px` | Saat kursor menyentuh area sensor atas — siap diklik untuk membuka panel penuh. |
+| **Expanded / Lyrics** | `476 × 172 px` | `500 × 184 px` | Saat diklik — panel penuh (`452 × 104 px` area konten) berisi 5 tab (`Music/Lyrics`, `Focus`, `Water`, `Shelf`, `To-do`). |
+| **Headphone HUD** | `268 × 54 px` | `292 × 66 px` | Pop-up otomatis selama 3 detik saat perangkat audio tersambung atau terputus. |
+| **Charging HUD** | `256 × 50 px` | `280 × 62 px` | Pop-up otomatis selama 3 detik saat charger dicolok, dilepas, atau baterai rendah/penuh. |
+
+> **Catatan teknis:** Kanvas transparan berukuran `540 × 204 px` disediakan untuk menampung animasi pegas tanpa terpotong. Saat *notch* aktif, area sensor diberi toleransi `+12 px` di sekeliling kapsul agar tidak langsung menutup saat kursor bergeser sedikit (lihat [`DIMENSIONS.md`](DIMENSIONS.md)).
+
+---
+
+## Kontrol
 
 | Aksi | Hasil |
 | :--- | :--- |
 | Arahkan kursor ke tepi atas tengah | Bangun dari Stealth ke Compact Pill (`276 × 30 px`) |
-| Klik Compact Pill / klik header atau tombol chevron | Buka atau tutup mode Expanded (`476 × 172 px`) |
+| Klik Compact Pill / klik header atau chevron | Buka atau tutup mode Expanded (`476 × 172 px`) |
 | Klik tab dock atau gulir *mouse wheel* di header/dock | Berpindah halaman (`Music`, `Focus`, `Water`, `Shelf`, `To-do`) |
-| Drag file/folder ke arah notch | Membuka halaman `Shelf` dan menambahkan item otomatis |
-| Drag grip titik di sebelah kiri baris To-do | Mengubah urutan tugas secara langsung |
+| Drag file/folder dari Explorer ke notch | Membuka halaman `Shelf` dan menambahkan item otomatis |
+| Drag grip titik di sisi kiri baris To-do | Mengubah urutan tugas secara langsung |
 | Klik kanan notch | Keluar dari Kripton (alternatif selain menu System Tray) |
 | Klik di luar area notch | Tembus klik ke aplikasi di bawahnya (`WS_EX_TRANSPARENT`) |
 
 ---
 
-## Arsitektur Proyek
+## Instalasi & Build
+
+### Installer Windows (Per-User, Tanpa UAC)
+
+Kompilasi executable rilis terlebih dahulu lalu bangun installer lewat **Inno Setup 6** (`installer/kripton.iss`) untuk menghasilkan `dist\Kripton-1.0.0-setup.exe` (mendukung opsi *Start with Windows* via `HKCU` tanpa hak administrator).
+
+### Kebutuhan & Build dari Source
+
+- Windows 10 (`22H2`) atau Windows 11
+- Rust **1.92+** (`x86_64-pc-windows-msvc`)
+- Visual Studio Build Tools (*Windows SDK* + *C++ workload*)
+
+```powershell
+# Jalankan versi development
+cargo run
+
+# Build rilis tunggal (target\release\kripton.exe)
+cargo build --release
+```
+
+Verifikasi format, lint, dan unit test (**66 test**):
+
+```powershell
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
+cargo test
+```
+
+> [!TIP]
+> Jika `cargo build --release` gagal karena file terkunci, hentikan proses `kripton.exe` yang sedang berjalan terlebih dahulu.
+
+---
+
+## Arsitektur
+
+Kripton memisahkan worker audio/SMTC/OLE ke thread latar belakang agar *UI thread* tetap berjalan halus pada `60 fps` dengan animasi pegas teredam (`ζ ≈ 0.72`, `ω ≈ 17 rad/s`).
+
+<details>
+<summary><strong>Struktur Modul (<code>src/</code> &amp; <code>ui/</code>)</strong></summary>
 
 ```text
 src/
@@ -79,36 +142,12 @@ ui/
 └── pages/            # music.slint, focus.slint, water.slint, shelf.slint, todo.slint
 ```
 
-> **Renderer:** **FemtoVG** digunakan agar transparansi *per-pixel alpha* pada Windows berjalan bersih tanpa artefak latar hitam.
+</details>
 
 ---
 
-## Build & Pengujian
+## Privasi, Inspirasi & Lisensi
 
-**Kebutuhan:** Windows 10 (22H2) / Windows 11, Rust **1.92+** (`x86_64-pc-windows-msvc`), dan Visual Studio Build Tools (Windows SDK + C++ workload).
-
-```powershell
-# Jalankan versi development
-cargo run
-
-# Build rilis tunggal (target\release\kripton.exe)
-cargo build --release
-```
-
-Verifikasi format, lint, dan unit test (**66 test**):
-
-```powershell
-cargo fmt --all -- --check
-cargo clippy --all-targets -- -D warnings
-cargo test
-```
-
-> Jika `cargo build --release` gagal karena file terkunci, hentikan proses `kripton.exe` yang sedang berjalan terlebih dahulu. Data lokal disimpan di `%APPDATA%\Kripton\state.json` dan log di `%APPDATA%\Kripton\kripton.log` tanpa telemetri.
-
----
-
-## Inspirasi & Lisensi
-
-Kripton terinspirasi oleh konsep dan desain **Nusa**, menghadirkan pengalaman *living notch* yang ringkas, responsif, dan ringan di Windows.
-
-MIT © 2026 Kripton. Lihat [`LICENSE`](LICENSE).
+- **100% Lokal**: State tersimpan di `%APPDATA%\Kripton\state.json` dan log di `%APPDATA%\Kripton\kripton.log` tanpa telemetri (permintaan jaringan hanya ke LRCLIB saat mode lirik aktif).
+- **Inspirasi**: Terinspirasi oleh konsep dan desain **Nusa**.
+- **Lisensi**: MIT © 2026 Kripton. Lihat [`LICENSE`](LICENSE).
